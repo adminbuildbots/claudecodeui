@@ -31,6 +31,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # to `claude`, so it has to be on PATH inside the container.
 RUN npm install -g @anthropic-ai/claude-code
 
+# ruflo (multi-agent orchestration via @claude-flow/cli, exposed as MCP).
+# Bake into the image so the binary is on PATH the moment the container
+# starts; no first-run install race, and rebuilds pin the version.
+# Registration as a Claude MCP server is a runtime step done once per
+# fresh ~/.claude — see CLAUDE.md "Ruflo / MCP" section.
+RUN npm install -g ruflo
+
 # Reuse the base image's built-in `node` user (uid/gid 1000). It already
 # matches the typical droplet user (waddl, also uid 1000) so bind-mounted
 # dotdirs are writable without chown gymnastics, and creating a second
