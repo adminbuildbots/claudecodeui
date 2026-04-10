@@ -38,7 +38,7 @@ RUN npm install -g @anthropic-ai/claude-code
 # fresh ~/.claude — see CLAUDE.md "Ruflo / MCP" section.
 RUN npm install -g ruflo
 
-# WORKAROUND: ruflo's bundled @xenova/transformers v2.17.2 hardcodes its
+# WORKAROUND 1: ruflo's bundled @xenova/transformers v2.17.2 hardcodes its
 # model cache to `<package-install-dir>/.cache`, which is read-only to the
 # `node` user inside the container. The library does NOT respect any env
 # var for cache path in this version (only programmatic env.cacheDir).
@@ -51,6 +51,38 @@ RUN npm install -g ruflo
 # model survives across image rebuilds.
 RUN ln -s /home/node/.claude-flow/cache/transformers \
       /usr/local/lib/node_modules/ruflo/node_modules/@xenova/transformers/.cache
+
+# WORKAROUND 2: in ruflo v3.5.78, every memory operation (store, retrieve,
+# search, list) tries the "AgentDB v3 bridge" path first via getBridge() in
+# memory-initializer.js. The bridge intercepts everything, returns success-
+# shaped results, but does NOT actually persist to the bind-mounted SQLite
+# db that the fallback path would use. Net effect: `ruflo memory store`
+# reports "Data stored successfully" with an entry id, but a direct sqlite3
+# query of memory.db shows zero rows, every queryable table empty, and
+# subsequent retrieve/list/search return "No entries found".
+#
+# Root cause: AgentDB v3 init reports "Activated: 15 Failed: 8" — 8 of 23
+# controllers fail silently, leaving the bridge in a half-initialized state
+# that accepts writes but doesn't durably persist them. Same code path is
+# used by both the CLI and the MCP `memory_*` tools, so Claude can't escape
+# the bug either.
+#
+# Fix: rename memory-bridge.js so the dynamic import in getBridge() throws.
+# The catch block sets `_bridge = null` and every storeEntry/searchEntries
+# call falls through to the working raw-sql.js fallback that writes to
+# `process.cwd()/.swarm/memory.db` (which we bind-mount via data/swarm/).
+#
+# Trade-off: we lose the AgentDB v3 features the bridge enables — BM25
+# hybrid search, ReasoningBank pattern store, CausalMemoryGraph edges,
+# ExplainableRecall provenance, AttestationLog. None of these were working
+# anyway given the failed controllers. The fallback gives us actual,
+# durable, namespace-scoped key/value memory with vector embeddings and
+# HNSW similarity search — which is the 80% use case.
+#
+# When ruflo upstream fixes the bridge, undo this by removing the rename
+# (or pinning to a version that doesn't have the bug).
+RUN mv /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/cli/dist/src/memory/memory-bridge.js \
+      /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/cli/dist/src/memory/memory-bridge.js.disabled-by-fork
 
 # Reuse the base image's built-in `node` user (uid/gid 1000). It already
 # matches the typical droplet user (waddl, also uid 1000) so bind-mounted
