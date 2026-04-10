@@ -3,8 +3,11 @@ import type { TFunction } from 'i18next';
 import { IS_PLATFORM } from '../../../../constants/config';
 import type { ReleaseInfo } from '../../../../types/sharedTypes';
 
-const GITHUB_ISSUES_URL = 'https://github.com/siteboon/claudecodeui/issues/new';
-const GITHUB_REPO_URL = 'https://github.com/siteboon/claudecodeui';
+// Fork-rewritten: point Report Issue and the brand line at OUR fork instead
+// of upstream siteboon/claudecodeui — bug reports for the modified instance
+// belong on the fork, not on upstream's tracker.
+const GITHUB_ISSUES_URL = 'https://github.com/adminbuildbots/claudecodeui/issues/new';
+const GITHUB_REPO_URL = 'https://github.com/adminbuildbots/claudecodeui';
 
 const DISCORD_INVITE_URL = 'https://discord.gg/buxwujPNRE';
 // AGPL-3.0 §13 (network-use clause): we must offer the Corresponding Source
