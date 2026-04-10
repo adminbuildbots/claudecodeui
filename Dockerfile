@@ -31,23 +31,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # to `claude`, so it has to be on PATH inside the container.
 RUN npm install -g @anthropic-ai/claude-code
 
-# Non-root runtime user, uid/gid 1000 to match the typical droplet user
-# (waddl) so bind-mounted dotdirs are writable without chown gymnastics.
-RUN groupadd --gid 1000 cloudcli \
- && useradd  --uid 1000 --gid cloudcli --shell /bin/bash --create-home cloudcli
+# Reuse the base image's built-in `node` user (uid/gid 1000). It already
+# matches the typical droplet user (waddl, also uid 1000) so bind-mounted
+# dotdirs are writable without chown gymnastics, and creating a second
+# uid-1000 account would just collide.
 
 WORKDIR /app
 
 # Install deps first for layer caching. HUSKY=0 skips git hook install
 # (no .git in image and no commits happen from inside the container).
-COPY --chown=cloudcli:cloudcli package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 RUN HUSKY=0 npm ci
 
 # Source + build the client bundle (vite -> dist/).
-COPY --chown=cloudcli:cloudcli . .
+COPY --chown=node:node . .
 RUN npm run build
 
-USER cloudcli
+USER node
 ENV NODE_ENV=production
 EXPOSE 3001
 
