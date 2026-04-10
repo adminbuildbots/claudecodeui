@@ -38,6 +38,20 @@ RUN npm install -g @anthropic-ai/claude-code
 # fresh ~/.claude — see CLAUDE.md "Ruflo / MCP" section.
 RUN npm install -g ruflo
 
+# WORKAROUND: ruflo's bundled @xenova/transformers v2.17.2 hardcodes its
+# model cache to `<package-install-dir>/.cache`, which is read-only to the
+# `node` user inside the container. The library does NOT respect any env
+# var for cache path in this version (only programmatic env.cacheDir).
+# Result: every `ruflo memory *` call retries the ~90 MB Xenova model
+# download, can't write the cache, spams EACCES errors, and (when output
+# is piped through tail) appears to hang.
+#
+# Fix: symlink the hardcoded cache path to a directory under the
+# bind-mounted ~/.claude-flow/cache/, so writes succeed AND the downloaded
+# model survives across image rebuilds.
+RUN ln -s /home/node/.claude-flow/cache/transformers \
+      /usr/local/lib/node_modules/ruflo/node_modules/@xenova/transformers/.cache
+
 # Reuse the base image's built-in `node` user (uid/gid 1000). It already
 # matches the typical droplet user (waddl, also uid 1000) so bind-mounted
 # dotdirs are writable without chown gymnastics, and creating a second
