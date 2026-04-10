@@ -84,6 +84,41 @@ RUN ln -s /home/node/.claude-flow/cache/transformers \
 RUN mv /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/cli/dist/src/memory/memory-bridge.js \
       /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/cli/dist/src/memory/memory-bridge.js.disabled-by-fork
 
+# WORKAROUND 3: in ruflo v3.5.78, MCP tool input validation runs through an
+# OPTIONAL @claude-flow/security module via a dynamic import in
+# `mcp-tools/validate-input.js#getSecurityModule()`. The intent is "load
+# enhanced Zod schemas if available, fall through to working inline regex
+# checks otherwise". Same defensive-fallback pattern as the memory bridge.
+#
+# Bug: the security module's `SpawnAgentSchema` Zod schema disagrees with
+# every other place in the codebase about field names. The MCP tool, the
+# CLI handler, and validate-input.js's inline checks all use `agentType`,
+# but the security schema requires literal `type`. Result: every single
+# `mcp__ruflo__agent_spawn` call fails with `Input validation failed:
+# type: Required` — the field the schema wants doesn't exist anywhere on
+# the calling side. The CLI path swallows this error silently and prints
+# "Agent X spawned successfully" with empty fields (no agent is actually
+# created — `ruflo agent list` returns 0 entries afterward).
+#
+# Fix: rename the @claude-flow/security package directory so the dynamic
+# import in getSecurityModule() throws. The catch block sets
+# `_securityModule = null`, validateAgentSpawn falls through to its inline
+# regex checks (which work correctly), and agent_spawn calls succeed.
+#
+# Trade-off: lose the additional Zod-based validation hardening that the
+# security package was meant to provide. Acceptable because (a) it doesn't
+# work anyway in this version, and (b) inline regex checks are still
+# applied — we're not disabling validation, just disabling the broken
+# *enhanced* validation layer.
+#
+# When ruflo upstream fixes the field-name mismatch, undo this by removing
+# the rename. The same security package may also affect other tools that
+# call validateAgentSpawn or sibling validators — if anything else breaks
+# with a similar "Input validation failed" pattern, this is the first
+# place to look.
+RUN mv /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/security \
+      /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/security.disabled-by-fork
+
 # Reuse the base image's built-in `node` user (uid/gid 1000). It already
 # matches the typical droplet user (waddl, also uid 1000) so bind-mounted
 # dotdirs are writable without chown gymnastics, and creating a second
