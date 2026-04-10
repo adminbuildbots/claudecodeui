@@ -40,7 +40,12 @@ WORKDIR /app
 
 # Install deps first for layer caching. HUSKY=0 skips git hook install
 # (no .git in image and no commits happen from inside the container).
+# scripts/ has to land before npm ci because cloudcli's postinstall hook
+# (`node scripts/fix-node-pty.js`) runs during install — even though the
+# script is a no-op on Linux, Node still tries to load it and crashes if
+# the file isn't on disk.
 COPY --chown=node:node package.json package-lock.json ./
+COPY --chown=node:node scripts ./scripts
 RUN HUSKY=0 npm ci
 
 # Source + build the client bundle (vite -> dist/).
