@@ -336,9 +336,17 @@ export function installPluginFromGit(url) {
 
       // Run npm install if package.json exists.
       // --ignore-scripts prevents postinstall hooks from executing arbitrary code.
+      // --include=dev forces npm to install devDependencies regardless of the
+      // ambient NODE_ENV. The cloudcli server runs with NODE_ENV=production
+      // (set in the Dockerfile), which would otherwise cause this child npm
+      // process to inherit it and SKIP devDependencies — breaking any plugin
+      // whose `npm run build` step depends on a build tool declared as a
+      // devDep (typescript, vite, esbuild, webpack, sass, etc.). The
+      // subsequent build itself stays in production mode, which is the
+      // correct behavior — we just need the build tools to be present.
       const packageJsonPath = path.join(tempDir, 'package.json');
       if (fs.existsSync(packageJsonPath)) {
-        const npmProcess = spawn('npm', ['install', '--ignore-scripts'], {
+        const npmProcess = spawn('npm', ['install', '--ignore-scripts', '--include=dev'], {
           cwd: tempDir,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -402,10 +410,11 @@ export function updatePluginFromGit(name) {
         return reject(new Error(`Invalid manifest after update: ${validation.error}`));
       }
 
-      // Re-run npm install if package.json exists
+      // Re-run npm install if package.json exists.
+      // See the install path above for why --include=dev is required here too.
       const packageJsonPath = path.join(pluginDir, 'package.json');
       if (fs.existsSync(packageJsonPath)) {
-        const npmProcess = spawn('npm', ['install', '--ignore-scripts'], {
+        const npmProcess = spawn('npm', ['install', '--ignore-scripts', '--include=dev'], {
           cwd: pluginDir,
           stdio: ['ignore', 'pipe', 'pipe'],
         });
