@@ -17,6 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
       python3 \
       python3-setuptools \
+      python3-pip \
+      python3-venv \
+      libpq-dev \
+      postgresql-client \
       git \
       jq \
       ripgrep \
@@ -26,6 +30,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       tree \
       vim-tiny \
     && rm -rf /var/lib/apt/lists/*
+
+# Python deps for in-house MCP servers (lab.keylinkit/mcp-servers/*).
+# `mcp` is the official Anthropic Python MCP SDK. `psycopg[binary]` is the
+# Postgres driver for our keylink-console MCP server. Installed system-wide
+# via --break-system-packages because Debian Bookworm marks the system
+# Python as PEP-668 externally-managed; we accept that since the only
+# Python in this image is for our MCP servers, no system tooling depends
+# on it. The break-system-packages flag was added in pip 23.0+.
+RUN pip3 install --break-system-packages --no-cache-dir \
+      "mcp>=1.0.0" \
+      "psycopg[binary]>=3.2.0"
 
 # Claude Code CLI itself. cloudcli's "Connect Claude" terminal shells out
 # to `claude`, so it has to be on PATH inside the container.
