@@ -135,32 +135,41 @@ RUN mv /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/security \
       /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/security.disabled-by-fork
 
 # Playwright MCP server (microsoft/playwright-mcp). Lets Claude drive a real
-# headless Chromium browser via the Playwright API — useful for scraping,
+# headless browser via the Playwright API — useful for scraping,
 # screenshotting, filling forms, and debugging end-to-end browser tests
 # from inside a chat session.
 #
-# `playwright install --with-deps chromium` does two things in one shot:
-#   (1) apt-installs the system shared libs Chromium needs (libnss3,
-#       libxkbcommon, libdrm, libgbm, libpango, libcairo, libasound2,
-#       fonts-noto-color-emoji, etc — ~30 packages, ~250 MB)
-#   (2) downloads the bundled Chromium build (~170 MB) into
-#       PLAYWRIGHT_BROWSERS_PATH
+# WHY GOOGLE CHROME, NOT THE BUNDLED CHROMIUM:
+# playwright-mcp's `--browser` flag accepts only release channels —
+# `chrome`, `firefox`, `webkit`, `msedge` — and defaults to `chrome`.
+# It does NOT accept `chromium` (the upstream open-source build that
+# `playwright install chromium` lays down). We tried both `--browser
+# chromium` and `--executable-path` to the bundled headless shell;
+# `--browser chromium` is rejected as an invalid channel, and the
+# version-pinned executable path (e.g. /ms-playwright/chromium-1217/...)
+# is a footgun that breaks silently every time playwright is upgraded
+# to a new browser revision. The cleanest fix is to install what
+# playwright-mcp actually expects by default: Google Chrome stable.
 #
-# We pin the browser cache to /ms-playwright (instead of the default
-# ~/.cache/ms-playwright) so the binaries are owned by root, readable by
-# everyone, and survive image rebuilds via the docker layer cache. The
-# unprivileged `node` user reads from this path at runtime via the same
-# PLAYWRIGHT_BROWSERS_PATH env var, which stays set for the runtime stage
-# below — no chown needed.
+# `playwright install --with-deps chrome` does two things in one shot:
+#   (1) downloads and installs Google Chrome stable to /opt/google/chrome
+#       (~280 MB) using the official Google deb package
+#   (2) apt-installs the system shared libs it depends on (libnss3,
+#       libxkbcommon, libdrm, libgbm, libpango, libcairo, libasound2,
+#       fonts-liberation, etc — ~30 packages)
+#
+# Google Chrome installs to /opt/google/chrome regardless of
+# PLAYWRIGHT_BROWSERS_PATH, so we don't bother setting that env var.
+# The /opt/google/chrome tree is root-owned and world-readable by
+# default — the unprivileged `node` user can launch it at runtime
+# without any chown work.
 #
 # Registration as an MCP server is a runtime step done once per fresh
 # ~/.claude.json — see CLAUDE.md "MCP servers" section for the
 # `claude mcp add playwright ...` command.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN npm install -g @playwright/mcp playwright \
-    && playwright install --with-deps chromium \
-    && rm -rf /var/lib/apt/lists/* \
-    && chmod -R a+rx /ms-playwright
+    && playwright install --with-deps chrome \
+    && rm -rf /var/lib/apt/lists/*
 
 # Reuse the base image's built-in `node` user (uid/gid 1000). It already
 # matches the typical droplet user (waddl, also uid 1000) so bind-mounted
