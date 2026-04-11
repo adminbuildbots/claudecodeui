@@ -134,6 +134,34 @@ RUN mv /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/cli/dist/src/
 RUN mv /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/security \
       /usr/local/lib/node_modules/ruflo/node_modules/@claude-flow/security.disabled-by-fork
 
+# Playwright MCP server (microsoft/playwright-mcp). Lets Claude drive a real
+# headless Chromium browser via the Playwright API — useful for scraping,
+# screenshotting, filling forms, and debugging end-to-end browser tests
+# from inside a chat session.
+#
+# `playwright install --with-deps chromium` does two things in one shot:
+#   (1) apt-installs the system shared libs Chromium needs (libnss3,
+#       libxkbcommon, libdrm, libgbm, libpango, libcairo, libasound2,
+#       fonts-noto-color-emoji, etc — ~30 packages, ~250 MB)
+#   (2) downloads the bundled Chromium build (~170 MB) into
+#       PLAYWRIGHT_BROWSERS_PATH
+#
+# We pin the browser cache to /ms-playwright (instead of the default
+# ~/.cache/ms-playwright) so the binaries are owned by root, readable by
+# everyone, and survive image rebuilds via the docker layer cache. The
+# unprivileged `node` user reads from this path at runtime via the same
+# PLAYWRIGHT_BROWSERS_PATH env var, which stays set for the runtime stage
+# below — no chown needed.
+#
+# Registration as an MCP server is a runtime step done once per fresh
+# ~/.claude.json — see CLAUDE.md "MCP servers" section for the
+# `claude mcp add playwright ...` command.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm install -g @playwright/mcp playwright \
+    && playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod -R a+rx /ms-playwright
+
 # Reuse the base image's built-in `node` user (uid/gid 1000). It already
 # matches the typical droplet user (waddl, also uid 1000) so bind-mounted
 # dotdirs are writable without chown gymnastics, and creating a second
