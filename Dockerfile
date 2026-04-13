@@ -53,6 +53,13 @@ RUN npm install -g @anthropic-ai/claude-code
 # fresh ~/.claude — see CLAUDE.md "Ruflo / MCP" section.
 RUN npm install -g ruflo
 
+# TaskMaster AI (eyaltoledano/claude-task-master). AI-driven task management
+# that decomposes PRDs into sequenced dev tasks. cloudcli's Settings → Tasks
+# tab detects it via `which task-master && task-master --version`. Also
+# registerable as an MCP server so Claude can use task-master tools natively
+# in chat sessions. Pure JS, no native deps, ~10-20 MB.
+RUN npm install -g task-master-ai
+
 # WORKAROUND 1: ruflo's bundled @xenova/transformers v2.17.2 hardcodes its
 # model cache to `<package-install-dir>/.cache`, which is read-only to the
 # `node` user inside the container. The library does NOT respect any env
