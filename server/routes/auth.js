@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import { userDb, loginEventsDb, db } from '../database/db.js';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
+import * as presence from '../presence.js';
 
 const router = express.Router();
 
@@ -152,6 +153,13 @@ router.post('/logout', authenticateToken, (req, res) => {
   // In a simple JWT system, logout is mainly client-side
   // This endpoint exists for consistency and potential future logging
   res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// Currently-active chat WebSockets — the "Now" panel feed. Ephemeral, in-memory,
+// reset on server restart. Each entry is one connected chat client with its IP,
+// browser, and most recent provider command (project, session, brief preview).
+router.get('/active-sessions', authenticateToken, (req, res) => {
+  res.json({ sessions: presence.list() });
 });
 
 // Recent login activity — visible to any authenticated user. Single-user lab,

@@ -71,6 +71,7 @@ import { startEnabledPluginServers, stopAllPlugins, getPluginPort } from './util
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
 import { configureWebPush } from './services/vapid-keys.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
+import * as presence from './presence.js';
 import { IS_PLATFORM } from './constants/config.js';
 import { getConnectableHost } from '../shared/networkHosts.js';
 
@@ -1436,6 +1437,12 @@ wss.on('connection', (ws, request) => {
     const urlObj = new URL(url, 'http://localhost');
     const pathname = urlObj.pathname;
 
+    // Track presence for chat WSes only — shell and plugin proxies aren't
+    // Now-panel-relevant.
+    if (pathname === '/ws') {
+        presence.register(ws, request);
+    }
+
     if (pathname === '/shell') {
         handleShellConnection(ws);
     } else if (pathname === '/ws') {
@@ -1495,6 +1502,25 @@ function handleChatConnection(ws, request) {
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
+
+            // Record presence activity for any provider command — used by the
+            // Now panel in Settings → Team activity.
+            const providerCommandTypes = {
+                'claude-command': 'claude',
+                'cursor-command': 'cursor',
+                'codex-command': 'codex',
+                'gemini-command': 'gemini',
+            };
+            const providerForType = providerCommandTypes[data.type];
+            if (providerForType) {
+                presence.noteActivity(ws, {
+                    provider: providerForType,
+                    sessionId: data.options?.sessionId || null,
+                    projectPath: data.options?.projectPath || data.options?.cwd || null,
+                    command: data.command,
+                    isResume: Boolean(data.options?.sessionId),
+                });
+            }
 
             if (data.type === 'claude-command') {
                 console.log('[DEBUG] User message:', data.command || '[Continue/Resume]');
