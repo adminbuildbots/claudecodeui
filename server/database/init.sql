@@ -97,3 +97,19 @@ CREATE TABLE IF NOT EXISTS app_config (
     value TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Login events table — visible audit trail of who logged in, when, and from where.
+-- The lab is single-user (one row in `users`), so the differentiator across team
+-- members sharing the account is the IP and user agent, not the username.
+CREATE TABLE IF NOT EXISTS login_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    event_type TEXT NOT NULL DEFAULT 'login',
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_events_user_id ON login_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_login_events_created_at ON login_events(created_at DESC);

@@ -221,6 +221,10 @@ async function setupProjectsWatcher() {
 
 
 const app = express();
+// Honor X-Forwarded-For from the reverse proxy in front of us (Cloudflare Tunnel
+// in lab.keylinkit's deploy). Without this, req.ip is always the proxy's address.
+// Phase A Track 2 needs accurate client IPs for the login activity panel.
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 const ptySessionsMap = new Map();

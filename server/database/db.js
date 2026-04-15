@@ -148,6 +148,19 @@ const runMigrations = () => {
     )`);
     db.exec('CREATE INDEX IF NOT EXISTS idx_session_names_lookup ON session_names(session_id, provider)');
 
+    // Login events table — added 2026-04-15 (Phase A Track 2: visible login activity)
+    db.exec(`CREATE TABLE IF NOT EXISTS login_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      event_type TEXT NOT NULL DEFAULT 'login',
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_login_events_user_id ON login_events(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_login_events_created_at ON login_events(created_at DESC)');
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('Error running migrations:', error.message);
@@ -596,6 +609,38 @@ const appConfigDb = {
   }
 };
 
+// Login events database operations — Phase A Track 2 (visible login activity).
+// Records each successful login/registration with IP + user-agent so the team can
+// see who's been on the lab recently. Single-user system means the same user_id
+// for everyone; the IP and user-agent are what differentiate team members.
+const loginEventsDb = {
+  recordEvent: (userId, { eventType = 'login', ipAddress = null, userAgent = null } = {}) => {
+    try {
+      db.prepare(
+        'INSERT INTO login_events (user_id, event_type, ip_address, user_agent) VALUES (?, ?, ?, ?)'
+      ).run(userId, eventType, ipAddress, userAgent);
+    } catch (err) {
+      // Non-fatal — we never want auth to fail because logging failed.
+      console.warn('Failed to record login event:', err.message);
+    }
+  },
+
+  getRecentEvents: (limit = 50) => {
+    try {
+      return db.prepare(`
+        SELECT le.id, le.event_type, le.ip_address, le.user_agent, le.created_at, u.username
+        FROM login_events le
+        LEFT JOIN users u ON le.user_id = u.id
+        ORDER BY le.created_at DESC
+        LIMIT ?
+      `).all(limit);
+    } catch (err) {
+      console.warn('Failed to fetch login events:', err.message);
+      return [];
+    }
+  }
+};
+
 // Backward compatibility - keep old names pointing to new system
 const githubTokensDb = {
   createGithubToken: (userId, tokenName, githubToken, description = null) => {
@@ -626,5 +671,6 @@ export {
   sessionNamesDb,
   applyCustomSessionNames,
   appConfigDb,
+  loginEventsDb,
   githubTokensDb // Backward compatibility
 };

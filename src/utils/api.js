@@ -47,6 +47,7 @@ export const api = {
     }),
     user: () => authenticatedFetch('/api/auth/user'),
     logout: () => authenticatedFetch('/api/auth/logout', { method: 'POST' }),
+    loginEvents: (limit = 50) => authenticatedFetch(`/api/auth/login-events?limit=${limit}`),
   },
 
   // Protected endpoints
