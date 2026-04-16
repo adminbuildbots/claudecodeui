@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   ChangeEvent,
@@ -12,6 +13,7 @@ import type {
   TouchEvent,
 } from 'react';
 import type { PendingPermissionRequest, PermissionMode, Provider } from '../../types/types';
+import { useSpeechRecognition } from '../../../../hooks/useSpeechRecognition';
 import CommandMenu from './CommandMenu';
 import ClaudeStatus from './ClaudeStatus';
 import ImageAttachment from './ImageAttachment';
@@ -87,6 +89,7 @@ interface ChatComposerProps {
   onTextareaInput: (event: FormEvent<HTMLTextAreaElement>) => void;
   onInputFocusChange?: (focused: boolean) => void;
   isInputFocused?: boolean;
+  setInput: Dispatch<SetStateAction<string>>;
   placeholder: string;
   isTextareaExpanded: boolean;
   sendByCtrlEnter?: boolean;
@@ -143,11 +146,33 @@ export default function ChatComposer({
   onTextareaInput,
   onInputFocusChange,
   isInputFocused,
+  setInput,
   placeholder,
   isTextareaExpanded,
   sendByCtrlEnter,
 }: ChatComposerProps) {
   const { t } = useTranslation('chat');
+
+  const onSpeechTranscript = useCallback(
+    (text: string) => {
+      setInput((prev) => {
+        const needsSpace = prev.length > 0 && !prev.endsWith(' ');
+        return prev + (needsSpace ? ' ' : '') + text.trim();
+      });
+      // Resize textarea after React updates the value.
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.style.height = 'auto';
+          el.style.height = `${el.scrollHeight}px`;
+        }
+      });
+    },
+    [setInput, textareaRef],
+  );
+
+  const { isSupported: speechSupported, isListening, start: startSpeech, stop: stopSpeech } =
+    useSpeechRecognition(onSpeechTranscript);
   const textareaRect = textareaRef.current?.getBoundingClientRect();
   const commandMenuPosition = {
     top: textareaRect ? Math.max(16, textareaRect.top - 316) : 0,
@@ -280,7 +305,7 @@ export default function ChatComposer({
         >
           <input {...getInputProps()} />
           <div ref={inputHighlightRef} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
-            <div className="chat-input-placeholder block w-full whitespace-pre-wrap break-words py-1.5 pl-12 pr-20 text-base leading-6 text-transparent sm:py-4 sm:pr-40">
+            <div className="chat-input-placeholder block w-full whitespace-pre-wrap break-words py-1.5 pl-[5.5rem] pr-20 text-base leading-6 text-transparent sm:py-4 sm:pr-40">
               {renderInputWithMentions(input)}
             </div>
           </div>
@@ -298,25 +323,53 @@ export default function ChatComposer({
               onBlur={() => onInputFocusChange?.(false)}
               onInput={onTextareaInput}
               placeholder={placeholder}
-              className="chat-input-placeholder block max-h-[40vh] min-h-[50px] w-full resize-none overflow-y-auto rounded-2xl bg-transparent py-1.5 pl-12 pr-20 text-base leading-6 text-foreground placeholder-muted-foreground/50 transition-all duration-200 focus:outline-none sm:max-h-[300px] sm:min-h-[80px] sm:py-4 sm:pr-40"
+              className="chat-input-placeholder block max-h-[40vh] min-h-[50px] w-full resize-none overflow-y-auto rounded-2xl bg-transparent py-1.5 pl-[5.5rem] pr-20 text-base leading-6 text-foreground placeholder-muted-foreground/50 transition-all duration-200 focus:outline-none sm:max-h-[300px] sm:min-h-[80px] sm:py-4 sm:pr-40"
               style={{ height: '50px' }}
             />
 
-            <button
-              type="button"
-              onClick={openImagePicker}
-              className="absolute left-2 top-1/2 -translate-y-1/2 transform rounded-xl p-2 transition-colors hover:bg-accent/60"
-              title={t('input.attachImages')}
-            >
-              <svg className="h-5 w-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              </svg>
-            </button>
+            <div className="absolute left-2 top-1/2 flex -translate-y-1/2 transform items-center gap-0.5">
+              <button
+                type="button"
+                onClick={openImagePicker}
+                className="rounded-xl p-2 transition-colors hover:bg-accent/60"
+                title={t('input.attachImages')}
+              >
+                <svg className="h-5 w-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+              </button>
+
+              {speechSupported && (
+                <button
+                  type="button"
+                  onClick={isListening ? stopSpeech : startSpeech}
+                  className={`rounded-xl p-2 transition-colors ${
+                    isListening
+                      ? 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50'
+                      : 'text-muted-foreground hover:bg-accent/60'
+                  }`}
+                  title={isListening ? 'Stop dictation' : 'Start dictation'}
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {isListening ? (
+                      <rect x="6" y="6" width="12" height="12" rx="2" strokeWidth={2} fill="currentColor" />
+                    ) : (
+                      <>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
+                        <line x1="12" y1="19" x2="12" y2="23" strokeWidth={2} strokeLinecap="round" />
+                        <line x1="8" y1="23" x2="16" y2="23" strokeWidth={2} strokeLinecap="round" />
+                      </>
+                    )}
+                  </svg>
+                </button>
+              )}
+            </div>
 
             <button
               type="submit"
@@ -337,7 +390,7 @@ export default function ChatComposer({
             </button>
 
             <div
-              className={`pointer-events-none absolute bottom-1 left-12 right-14 hidden text-xs text-muted-foreground/50 transition-opacity duration-200 sm:right-40 sm:block ${
+              className={`pointer-events-none absolute bottom-1 left-[5.5rem] right-14 hidden text-xs text-muted-foreground/50 transition-opacity duration-200 sm:right-40 sm:block ${
                 input.trim() ? 'opacity-0' : 'opacity-100'
               }`}
             >
