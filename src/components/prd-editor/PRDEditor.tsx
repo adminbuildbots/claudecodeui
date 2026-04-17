@@ -119,7 +119,7 @@ export default function PRDEditor({
     sessionStorage.setItem('prd:awaiting', 'true');
     const prompt = `Review this project's codebase and fill in the following PRD template with project-specific information. Analyze the code structure, dependencies, features, and architecture to produce a comprehensive Product Requirements Document.
 
-Use /design to structure your analysis before filling in the template.
+Before writing, thoroughly explore the project: read key source files, check package.json / requirements.txt for dependencies, examine the directory structure, and understand what the project does and how it's built.
 
 Instructions:
 - Fill in every applicable section with actual information from this project
