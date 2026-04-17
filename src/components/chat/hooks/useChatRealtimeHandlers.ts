@@ -249,11 +249,6 @@ export function useChatRealtimeHandlers({
           clearTimeout(streamTimerRef.current);
           streamTimerRef.current = null;
         }
-        // Capture accumulated content before flush — the PRD editor may
-        // need it if "Generate with AI" triggered this session.
-        const prdAwaiting = sessionStorage.getItem('prd:awaiting');
-        const accumulatedForPrd = prdAwaiting ? accumulatedStreamRef.current : '';
-
         if (sid && accumulatedStreamRef.current) {
           sessionStore.updateStreaming(sid, accumulatedStreamRef.current, provider);
           sessionStore.finalizeStreaming(sid);
@@ -291,14 +286,37 @@ export function useChatRealtimeHandlers({
         }
 
         // PRD editor auto-populate: if "Generate with AI" triggered this
-        // session, send the accumulated response back to the PRD editor.
-        if (prdAwaiting && accumulatedForPrd) {
+        // session, extract the full assistant response from the session store
+        // and send it back to the PRD editor. We read from the store instead
+        // of accumulatedStreamRef because that ref only holds the current
+        // streaming segment — it gets cleared on every stream_end between
+        // tool calls, so by completion time it's usually empty.
+        if (sessionStorage.getItem('prd:awaiting') && sid) {
           sessionStorage.removeItem('prd:awaiting');
-          window.dispatchEvent(
-            new CustomEvent('prd:receive-content', {
-              detail: { content: accumulatedForPrd },
-            }),
-          );
+          const slot = sessionStore.getSlot(sid);
+          const allMessages = [...slot.serverMessages, ...slot.realtimeMessages];
+          // Find the last user message index, then collect all assistant text after it.
+          let lastUserIdx = -1;
+          for (let i = allMessages.length - 1; i >= 0; i--) {
+            if (allMessages[i].kind === 'text' && allMessages[i].role === 'user') {
+              lastUserIdx = i;
+              break;
+            }
+          }
+          const assistantTexts: string[] = [];
+          for (let i = lastUserIdx + 1; i < allMessages.length; i++) {
+            const m = allMessages[i];
+            if (m.kind === 'text' && m.role === 'assistant' && m.content?.trim()) {
+              assistantTexts.push(m.content);
+            }
+          }
+          if (assistantTexts.length > 0) {
+            window.dispatchEvent(
+              new CustomEvent('prd:receive-content', {
+                detail: { content: assistantTexts.join('\n\n') },
+              }),
+            );
+          }
         }
         break;
       }
