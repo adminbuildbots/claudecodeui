@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Project } from '../../types/app';
+import { api } from '../../utils/api';
 import { usePrdDocument } from './hooks/usePrdDocument';
 import { usePrdKeyboardShortcuts } from './hooks/usePrdKeyboardShortcuts';
 import { usePrdRegistry } from './hooks/usePrdRegistry';
@@ -31,6 +32,9 @@ export default function PRDEditor({
 }: PRDEditorProps) {
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState<boolean>(false);
   const [overwriteFileName, setOverwriteFileName] = useState<string>('');
+  const [submittingForge, setSubmittingForge] = useState<boolean>(false);
+  const [forgeSubmitSuccess, setForgeSubmitSuccess] = useState<boolean>(false);
+  const forgeSuccessTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { content, setContent, fileName, setFileName, loading, loadError } = usePrdDocument({
     file,
@@ -95,6 +99,32 @@ export default function PRDEditor({
     await handleSave(true);
   }, [handleSave]);
 
+  const handleSubmitForge = useCallback(async () => {
+    if (!content.trim()) {
+      alert('Please add content to the PRD before submitting.');
+      return;
+    }
+    setSubmittingForge(true);
+    setForgeSubmitSuccess(false);
+    try {
+      const res = await api.forge.submit(fileName || 'untitled-prd', content);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: res.statusText }));
+        throw new Error(data.message || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setForgeSubmitSuccess(true);
+      if (forgeSuccessTimer.current) clearTimeout(forgeSuccessTimer.current);
+      forgeSuccessTimer.current = setTimeout(() => setForgeSubmitSuccess(false), 3000);
+      // Open the file in Gitea in a new tab
+      if (data.fileUrl) window.open(data.fileUrl, '_blank');
+    } catch (err) {
+      alert(`Submit to Forge failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setSubmittingForge(false);
+    }
+  }, [content, fileName]);
+
   usePrdKeyboardShortcuts({
     onSave: () => {
       void handleSave();
@@ -121,6 +151,9 @@ export default function PRDEditor({
         }}
         onDownload={handleDownload}
         onClose={onClose}
+        onSubmitForge={() => { void handleSubmitForge(); }}
+        submittingForge={submittingForge}
+        forgeSubmitSuccess={forgeSubmitSuccess}
         loadError={loadError}
       />
 

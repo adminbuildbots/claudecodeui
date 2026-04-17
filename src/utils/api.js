@@ -204,6 +204,14 @@ export const api = {
       body: JSON.stringify({ path: folderPath }),
     }),
 
+  // Forge endpoints
+  forge: {
+    submit: (fileName, content) => authenticatedFetch('/api/forge/submit', {
+      method: 'POST',
+      body: JSON.stringify({ fileName, content }),
+    }),
+  },
+
   // User endpoints
   user: {
     gitConfig: () => authenticatedFetch('/api/user/git-config'),

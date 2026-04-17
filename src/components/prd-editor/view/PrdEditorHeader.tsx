@@ -10,6 +10,7 @@ import {
   Save,
   Sparkles,
   Sun,
+  Upload,
   X,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
@@ -30,6 +31,9 @@ type PrdEditorHeaderProps = {
   onSave: () => void;
   saving: boolean;
   saveSuccess: boolean;
+  onSubmitForge: () => void;
+  submittingForge: boolean;
+  forgeSubmitSuccess: boolean;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onClose: () => void;
@@ -75,6 +79,9 @@ export default function PrdEditorHeader({
   onSave,
   saving,
   saveSuccess,
+  onSubmitForge,
+  submittingForge,
+  forgeSubmitSuccess,
   isFullscreen,
   onToggleFullscreen,
   onClose,
@@ -205,6 +212,30 @@ export default function PrdEditorHeader({
             <>
               <Save className="h-5 w-5 md:h-4 md:w-4" />
               <span className="hidden sm:inline">{saving ? 'Saving...' : 'Save PRD'}</span>
+            </>
+          )}
+        </button>
+
+        <button
+          onClick={onSubmitForge}
+          disabled={submittingForge}
+          className={cn(
+            'px-3 py-2 text-white rounded-md disabled:opacity-50 flex items-center gap-2 transition-colors min-h-[44px] md:min-h-0 text-sm font-medium',
+            forgeSubmitSuccess ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700',
+          )}
+          title="Submit PRD to Gitea for Forge pipeline"
+        >
+          {forgeSubmitSuccess ? (
+            <>
+              <svg className="h-5 w-5 md:h-4 md:w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="hidden sm:inline">Submitted!</span>
+            </>
+          ) : (
+            <>
+              <Upload className="h-5 w-5 md:h-4 md:w-4" />
+              <span className="hidden sm:inline">{submittingForge ? 'Submitting...' : 'Submit to Forge'}</span>
             </>
           )}
         </button>
