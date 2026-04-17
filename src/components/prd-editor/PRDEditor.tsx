@@ -19,6 +19,7 @@ type PRDEditorProps = {
   initialContent?: string;
   isNewFile?: boolean;
   onSave?: () => Promise<void> | void;
+  onSendToChat?: (prompt: string) => void;
 };
 
 export default function PRDEditor({
@@ -29,6 +30,7 @@ export default function PRDEditor({
   initialContent = '',
   isNewFile = false,
   onSave,
+  onSendToChat,
 }: PRDEditorProps) {
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState<boolean>(false);
   const [overwriteFileName, setOverwriteFileName] = useState<string>('');
@@ -99,6 +101,25 @@ export default function PRDEditor({
     await handleSave(true);
   }, [handleSave]);
 
+  const handleGenerateWithAI = useCallback(() => {
+    if (!onSendToChat) return;
+    const prompt = `Review this project's codebase and fill in the following PRD template with project-specific information. Analyze the code structure, dependencies, features, and architecture to produce a comprehensive Product Requirements Document.
+
+Use /design to structure your analysis before filling in the template.
+
+Instructions:
+- Fill in every applicable section with actual information from this project
+- Delete sections marked "INCLUDE IF" that don't apply to this project
+- Keep the markdown formatting and table structures intact
+- Be thorough but concise
+- Output ONLY the filled-in PRD markdown, no preamble or explanation
+
+Here is the template to fill in:
+
+${content}`;
+    onSendToChat(prompt);
+  }, [content, onSendToChat]);
+
   const handleSubmitForge = useCallback(async () => {
     if (!content.trim()) {
       alert('Please add content to the PRD before submitting.');
@@ -154,6 +175,7 @@ export default function PRDEditor({
         onSubmitForge={() => { void handleSubmitForge(); }}
         submittingForge={submittingForge}
         forgeSubmitSuccess={forgeSubmitSuccess}
+        onGenerateWithAI={onSendToChat ? handleGenerateWithAI : undefined}
         loadError={loadError}
       />
 

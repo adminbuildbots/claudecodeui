@@ -20,6 +20,7 @@ type PrdEditorWorkspaceProps = {
   onSubmitForge: () => void;
   submittingForge: boolean;
   forgeSubmitSuccess: boolean;
+  onGenerateWithAI?: () => void;
   loadError: string | null;
 };
 
@@ -37,6 +38,7 @@ export default function PrdEditorWorkspace({
   onSubmitForge,
   submittingForge,
   forgeSubmitSuccess,
+  onGenerateWithAI,
   loadError,
 }: PrdEditorWorkspaceProps) {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -95,6 +97,7 @@ export default function PrdEditorWorkspace({
           onSubmitForge={onSubmitForge}
           submittingForge={submittingForge}
           forgeSubmitSuccess={forgeSubmitSuccess}
+          onGenerateWithAI={onGenerateWithAI}
           isFullscreen={isFullscreen}
           onToggleFullscreen={() => setIsFullscreen((current) => !current)}
           onClose={onClose}

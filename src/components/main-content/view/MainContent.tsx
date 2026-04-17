@@ -170,6 +170,10 @@ function MainContent({
                 project={selectedProject}
                 onClose={() => setActiveTab('chat')}
                 isNewFile
+                onSendToChat={(prompt: string) => {
+                  window.dispatchEvent(new CustomEvent('prd:send-to-chat', { detail: { prompt } }));
+                  setActiveTab('chat');
+                }}
               />
             </div>
           )}

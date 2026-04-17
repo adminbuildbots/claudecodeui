@@ -267,6 +267,27 @@ function ChatInterface({
     };
   }, [resetStreamingState]);
 
+  // Listen for cross-tab prompt injection (e.g. PRD editor "Generate with AI").
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ prompt: string }>).detail;
+      if (detail?.prompt) {
+        setInput(detail.prompt);
+        // Resize textarea on next frame after React applies the value.
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (el) {
+            el.style.height = 'auto';
+            el.style.height = `${el.scrollHeight}px`;
+            el.focus();
+          }
+        });
+      }
+    };
+    window.addEventListener('prd:send-to-chat', handler);
+    return () => window.removeEventListener('prd:send-to-chat', handler);
+  }, [setInput, textareaRef]);
+
   if (!selectedProject) {
     const selectedProviderLabel =
       provider === 'cursor'

@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
+  Bot,
   Download,
   Eye,
   FileText,
@@ -34,6 +35,7 @@ type PrdEditorHeaderProps = {
   onSubmitForge: () => void;
   submittingForge: boolean;
   forgeSubmitSuccess: boolean;
+  onGenerateWithAI?: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   onClose: () => void;
@@ -82,6 +84,7 @@ export default function PrdEditorHeader({
   onSubmitForge,
   submittingForge,
   forgeSubmitSuccess,
+  onGenerateWithAI,
   isFullscreen,
   onToggleFullscreen,
   onClose,
@@ -179,6 +182,20 @@ export default function PrdEditorHeader({
           onClick={onDownload}
           icon={<Download className="h-5 w-5 md:h-4 md:w-4" />}
         />
+
+        {onGenerateWithAI && (
+          <button
+            onClick={onGenerateWithAI}
+            className={cn(
+              'px-3 py-2 rounded-md flex items-center gap-2 transition-colors text-sm font-medium min-h-[44px] md:min-h-0',
+              'bg-emerald-600 hover:bg-emerald-700 text-white',
+            )}
+            title="Have Claude analyze this project and fill in the PRD template"
+          >
+            <Bot className="h-4 w-4" />
+            <span className="hidden md:inline">Generate with AI</span>
+          </button>
+        )}
 
         <button
           onClick={onOpenGenerateTasks}
