@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Project } from '../../types/app';
 import { api } from '../../utils/api';
 import { usePrdDocument } from './hooks/usePrdDocument';
@@ -101,8 +101,22 @@ export default function PRDEditor({
     await handleSave(true);
   }, [handleSave]);
 
+  // Listen for AI-generated PRD content coming back from the chat session.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ content: string }>).detail;
+      if (detail?.content) {
+        setContent(detail.content);
+      }
+    };
+    window.addEventListener('prd:receive-content', handler);
+    return () => window.removeEventListener('prd:receive-content', handler);
+  }, [setContent]);
+
   const handleGenerateWithAI = useCallback(() => {
     if (!onSendToChat) return;
+    // Set flag so the chat completion handler knows to pipe the response back.
+    sessionStorage.setItem('prd:awaiting', 'true');
     const prompt = `Review this project's codebase and fill in the following PRD template with project-specific information. Analyze the code structure, dependencies, features, and architecture to produce a comprehensive Product Requirements Document.
 
 Use /design to structure your analysis before filling in the template.

@@ -249,6 +249,11 @@ export function useChatRealtimeHandlers({
           clearTimeout(streamTimerRef.current);
           streamTimerRef.current = null;
         }
+        // Capture accumulated content before flush — the PRD editor may
+        // need it if "Generate with AI" triggered this session.
+        const prdAwaiting = sessionStorage.getItem('prd:awaiting');
+        const accumulatedForPrd = prdAwaiting ? accumulatedStreamRef.current : '';
+
         if (sid && accumulatedStreamRef.current) {
           sessionStore.updateStreaming(sid, accumulatedStreamRef.current, provider);
           sessionStore.finalizeStreaming(sid);
@@ -283,6 +288,17 @@ export function useChatRealtimeHandlers({
           if (window.refreshProjects) {
             setTimeout(() => window.refreshProjects?.(), 500);
           }
+        }
+
+        // PRD editor auto-populate: if "Generate with AI" triggered this
+        // session, send the accumulated response back to the PRD editor.
+        if (prdAwaiting && accumulatedForPrd) {
+          sessionStorage.removeItem('prd:awaiting');
+          window.dispatchEvent(
+            new CustomEvent('prd:receive-content', {
+              detail: { content: accumulatedForPrd },
+            }),
+          );
         }
         break;
       }
