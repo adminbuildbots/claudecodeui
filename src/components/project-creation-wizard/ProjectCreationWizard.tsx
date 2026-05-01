@@ -1,25 +1,44 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderPlus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ErrorBanner from './components/ErrorBanner';
 import StepConfiguration from './components/StepConfiguration';
+import StepGitRemote from './components/StepGitRemote';
 import StepReview from './components/StepReview';
 import StepTypeSelection from './components/StepTypeSelection';
 import WizardFooter from './components/WizardFooter';
 import WizardProgress from './components/WizardProgress';
 import { useGithubTokens } from './hooks/useGithubTokens';
-import { cloneWorkspaceWithProgress, createWorkspaceRequest } from './data/workspaceApi';
-import { isCloneWorkflow, shouldShowGithubAuthentication } from './utils/pathUtils';
-import type { TokenMode, WizardFormState, WizardStep, WorkspaceType } from './types';
+import {
+  cloneWorkspaceWithProgress,
+  createWithGitProgress,
+  searchGiteaRepos,
+} from './data/workspaceApi';
+import type {
+  GitRemoteMode,
+  GiteaRepoSummary,
+  TokenMode,
+  WizardFormState,
+  WizardStep,
+  WorkspaceType,
+} from './types';
 
 type ProjectCreationWizardProps = {
   onClose: () => void;
   onProjectCreated?: (project?: Record<string, unknown>) => void;
 };
 
+const DEFAULT_GITEA_ORG = 'keylink-studio';
+
 const initialFormState: WizardFormState = {
   workspaceType: 'existing',
   workspacePath: '',
+  prdProjectName: '',
+  gitRemoteMode: 'none',
+  gitCreateName: '',
+  gitCreateOrg: DEFAULT_GITEA_ORG,
+  gitCreatePrivate: false,
+  gitPickedRepo: null,
   githubUrl: '',
   tokenMode: 'stored',
   selectedGithubToken: '',
@@ -35,10 +54,57 @@ export default function ProjectCreationWizard({
   const [formState, setFormState] = useState<WizardFormState>(initialFormState);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cloneProgress, setCloneProgress] = useState('');
+  const [progressMessage, setProgressMessage] = useState('');
+  const [defaultGiteaOrg, setDefaultGiteaOrg] = useState(DEFAULT_GITEA_ORG);
 
-  const shouldLoadTokens =
-    step === 2 && shouldShowGithubAuthentication(formState.workspaceType, formState.githubUrl);
+  // Auto-default git remote mode based on workspace type when entering step 3.
+  useEffect(() => {
+    if (step !== 3) return;
+    setFormState((previous) => {
+      if (previous.gitRemoteMode !== 'none' || previous.workspaceType === 'existing') {
+        return previous;
+      }
+      return {
+        ...previous,
+        gitRemoteMode: 'create',
+        gitCreateName:
+          previous.gitCreateName ||
+          (previous.workspaceType === 'from-prd'
+            ? slugifyName(previous.prdProjectName)
+            : pickLeafName(previous.workspacePath)),
+      };
+    });
+  }, [step]);
+
+  // Lazy-load default org from the search endpoint the first time step 3 opens.
+  useEffect(() => {
+    if (step !== 3) return;
+    let disposed = false;
+    searchGiteaRepos('')
+      .then((data) => {
+        if (!disposed && data.defaultOrg) {
+          setDefaultGiteaOrg(data.defaultOrg);
+          setFormState((prev) =>
+            prev.gitCreateOrg === DEFAULT_GITEA_ORG
+              ? { ...prev, gitCreateOrg: data.defaultOrg }
+              : prev,
+          );
+        }
+      })
+      .catch(() => {
+        // Non-fatal — search can fail later when the user actually picks. Step 3 still works.
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [step]);
+
+  const shouldLoadGithubTokens =
+    step === 3 &&
+    formState.gitRemoteMode === 'external' &&
+    formState.githubUrl.trim().length > 0 &&
+    !formState.githubUrl.trim().startsWith('git@') &&
+    !formState.githubUrl.trim().startsWith('ssh://');
 
   const autoSelectToken = useCallback((tokenId: string) => {
     setFormState((previous) => ({ ...previous, selectedGithubToken: tokenId }));
@@ -50,15 +116,17 @@ export default function ProjectCreationWizard({
     loadError: tokenLoadError,
     selectedTokenName,
   } = useGithubTokens({
-    shouldLoad: shouldLoadTokens,
+    shouldLoad: shouldLoadGithubTokens,
     selectedTokenId: formState.selectedGithubToken,
     onAutoSelectToken: autoSelectToken,
   });
 
-  // Keep cross-step values in this component; local UI state lives in child components.
-  const updateField = useCallback(<K extends keyof WizardFormState>(key: K, value: WizardFormState[K]) => {
-    setFormState((previous) => ({ ...previous, [key]: value }));
-  }, []);
+  const updateField = useCallback(
+    <K extends keyof WizardFormState>(key: K, value: WizardFormState[K]) => {
+      setFormState((previous) => ({ ...previous, [key]: value }));
+    },
+    [],
+  );
 
   const updateWorkspaceType = useCallback(
     (workspaceType: WorkspaceType) => updateField('workspaceType', workspaceType),
@@ -67,6 +135,16 @@ export default function ProjectCreationWizard({
 
   const updateTokenMode = useCallback(
     (tokenMode: TokenMode) => updateField('tokenMode', tokenMode),
+    [updateField],
+  );
+
+  const updateGitRemoteMode = useCallback(
+    (gitRemoteMode: GitRemoteMode) => updateField('gitRemoteMode', gitRemoteMode),
+    [updateField],
+  );
+
+  const updatePickedRepo = useCallback(
+    (gitPickedRepo: GiteaRepoSummary | null) => updateField('gitPickedRepo', gitPickedRepo),
     [updateField],
   );
 
@@ -83,13 +161,28 @@ export default function ProjectCreationWizard({
     }
 
     if (step === 2) {
-      if (!formState.workspacePath.trim()) {
+      if (formState.workspaceType === 'from-prd') {
+        if (!formState.prdProjectName.trim()) {
+          setError(t('projectWizard.errors.providePrdName'));
+          return;
+        }
+      } else if (!formState.workspacePath.trim()) {
         setError(t('projectWizard.errors.providePath'));
         return;
       }
       setStep(3);
+      return;
     }
-  }, [formState.workspacePath, formState.workspaceType, step, t]);
+
+    if (step === 3) {
+      const validation = validateGitRemoteStep(formState, t);
+      if (validation) {
+        setError(validation);
+        return;
+      }
+      setStep(4);
+    }
+  }, [formState, step, t]);
 
   const handleBack = useCallback(() => {
     setError(null);
@@ -99,12 +192,15 @@ export default function ProjectCreationWizard({
   const handleCreate = useCallback(async () => {
     setIsCreating(true);
     setError(null);
-    setCloneProgress('');
+    setProgressMessage('');
 
     try {
-      const shouldCloneRepository = isCloneWorkflow(formState.workspaceType, formState.githubUrl);
+      const useExternalClone =
+        formState.gitRemoteMode === 'external' &&
+        formState.githubUrl.trim() !== '' &&
+        (formState.workspaceType === 'new' || formState.workspaceType === 'from-prd');
 
-      if (shouldCloneRepository) {
+      if (useExternalClone) {
         const project = await cloneWorkspaceWithProgress(
           {
             workspacePath: formState.workspacePath,
@@ -113,9 +209,7 @@ export default function ProjectCreationWizard({
             selectedGithubToken: formState.selectedGithubToken,
             newGithubToken: formState.newGithubToken,
           },
-          {
-            onProgress: setCloneProgress,
-          },
+          { onProgress: setProgressMessage },
         );
 
         onProjectCreated?.(project);
@@ -123,12 +217,21 @@ export default function ProjectCreationWizard({
         return;
       }
 
-      const project = await createWorkspaceRequest({
-        workspaceType: formState.workspaceType,
-        path: formState.workspacePath.trim(),
-      });
+      const result = await createWithGitProgress(
+        {
+          workspaceType: formState.workspaceType,
+          workspacePath: formState.workspacePath,
+          prdProjectName: formState.prdProjectName,
+          gitRemoteMode: formState.gitRemoteMode === 'external' ? 'none' : formState.gitRemoteMode,
+          gitCreateName: formState.gitCreateName,
+          gitCreateOrg: formState.gitCreateOrg,
+          gitCreatePrivate: formState.gitCreatePrivate,
+          gitPickedRepo: formState.gitPickedRepo,
+        },
+        { onProgress: setProgressMessage },
+      );
 
-      onProjectCreated?.(project);
+      onProjectCreated?.(result.project);
       onClose();
     } catch (createError) {
       const errorMessage =
@@ -141,9 +244,12 @@ export default function ProjectCreationWizard({
     }
   }, [formState, onClose, onProjectCreated, t]);
 
-  const shouldCloneRepository = useMemo(
-    () => isCloneWorkflow(formState.workspaceType, formState.githubUrl),
-    [formState.githubUrl, formState.workspaceType],
+  const isCloneWorkflow = useMemo(
+    () =>
+      formState.gitRemoteMode === 'external' &&
+      formState.githubUrl.trim() !== '' &&
+      (formState.workspaceType === 'new' || formState.workspaceType === 'from-prd'),
+    [formState.githubUrl, formState.gitRemoteMode, formState.workspaceType],
   );
 
   return (
@@ -183,6 +289,22 @@ export default function ProjectCreationWizard({
             <StepConfiguration
               workspaceType={formState.workspaceType}
               workspacePath={formState.workspacePath}
+              prdProjectName={formState.prdProjectName}
+              isCreating={isCreating}
+              onWorkspacePathChange={(workspacePath) => updateField('workspacePath', workspacePath)}
+              onPrdProjectNameChange={(name) => updateField('prdProjectName', name)}
+              onAdvanceToConfirm={() => setStep(4)}
+            />
+          )}
+
+          {step === 3 && (
+            <StepGitRemote
+              gitRemoteMode={formState.gitRemoteMode}
+              gitCreateName={formState.gitCreateName}
+              gitCreateOrg={formState.gitCreateOrg}
+              gitCreatePrivate={formState.gitCreatePrivate}
+              gitPickedRepo={formState.gitPickedRepo}
+              defaultOrg={defaultGiteaOrg}
               githubUrl={formState.githubUrl}
               tokenMode={formState.tokenMode}
               selectedGithubToken={formState.selectedGithubToken}
@@ -191,25 +313,28 @@ export default function ProjectCreationWizard({
               loadingTokens={loadingTokens}
               tokenLoadError={tokenLoadError}
               isCreating={isCreating}
-              onWorkspacePathChange={(workspacePath) => updateField('workspacePath', workspacePath)}
+              showExternalMode={
+                formState.workspaceType === 'new' || formState.workspaceType === 'from-prd'
+              }
+              onGitRemoteModeChange={updateGitRemoteMode}
+              onGitCreateNameChange={(name) => updateField('gitCreateName', name)}
+              onGitCreateOrgChange={(org) => updateField('gitCreateOrg', org)}
+              onGitCreatePrivateChange={(value) => updateField('gitCreatePrivate', value)}
+              onGitPickedRepoChange={updatePickedRepo}
               onGithubUrlChange={(githubUrl) => updateField('githubUrl', githubUrl)}
               onTokenModeChange={updateTokenMode}
-              onSelectedGithubTokenChange={(selectedGithubToken) =>
-                updateField('selectedGithubToken', selectedGithubToken)
-              }
-              onNewGithubTokenChange={(newGithubToken) =>
-                updateField('newGithubToken', newGithubToken)
-              }
-              onAdvanceToConfirm={() => setStep(3)}
+              onSelectedGithubTokenChange={(id) => updateField('selectedGithubToken', id)}
+              onNewGithubTokenChange={(token) => updateField('newGithubToken', token)}
             />
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <StepReview
               formState={formState}
               selectedTokenName={selectedTokenName}
               isCreating={isCreating}
-              cloneProgress={cloneProgress}
+              cloneProgress={isCloneWorkflow ? progressMessage : ''}
+              remoteProgress={!isCloneWorkflow ? progressMessage : ''}
             />
           )}
         </div>
@@ -217,7 +342,7 @@ export default function ProjectCreationWizard({
         <WizardFooter
           step={step}
           isCreating={isCreating}
-          isCloneWorkflow={shouldCloneRepository}
+          isCloneWorkflow={isCloneWorkflow}
           onClose={onClose}
           onBack={handleBack}
           onNext={handleNext}
@@ -226,4 +351,40 @@ export default function ProjectCreationWizard({
       </div>
     </div>
   );
+}
+
+function validateGitRemoteStep(state: WizardFormState, t: (key: string) => string): string | null {
+  switch (state.gitRemoteMode) {
+    case 'create':
+      if (!state.gitCreateName.trim()) return t('projectWizard.errors.provideRepoName');
+      if (!/^[A-Za-z0-9_.-]+$/.test(state.gitCreateName.trim())) {
+        return t('projectWizard.errors.invalidRepoName');
+      }
+      return null;
+    case 'pick':
+      if (!state.gitPickedRepo) return t('projectWizard.errors.pickRepo');
+      return null;
+    case 'external':
+      if (!state.githubUrl.trim()) return t('projectWizard.errors.provideGithubUrl');
+      return null;
+    case 'none':
+    default:
+      return null;
+  }
+}
+
+function pickLeafName(workspacePath: string): string {
+  const trimmed = workspacePath.trim().replace(/[\\/]+$/, '');
+  if (!trimmed) return '';
+  const segments = trimmed.split(/[\\/]/);
+  return slugifyName(segments[segments.length - 1] || '');
+}
+
+function slugifyName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
 }

@@ -7,7 +7,11 @@ import type {
   CreateWorkspaceResponse,
   CredentialsResponse,
   FolderSuggestion,
+  GitRemoteMode,
+  GiteaRepoSearchResponse,
+  GiteaRepoSummary,
   TokenMode,
+  WorkspaceType,
 } from '../types';
 
 type CloneWorkspaceParams = {
@@ -18,8 +22,24 @@ type CloneWorkspaceParams = {
   newGithubToken: string;
 };
 
-type CloneProgressHandlers = {
+type CreateWithGitParams = {
+  workspaceType: WorkspaceType;
+  workspacePath: string;
+  prdProjectName: string;
+  gitRemoteMode: GitRemoteMode;
+  gitCreateName: string;
+  gitCreateOrg: string;
+  gitCreatePrivate: boolean;
+  gitPickedRepo: GiteaRepoSummary | null;
+};
+
+type ProgressHandlers = {
   onProgress: (message: string) => void;
+};
+
+type CreateWithGitResult = {
+  project?: Record<string, unknown>;
+  remote?: { full_name: string; html_url: string } | null;
 };
 
 const parseJson = async <T>(response: Response): Promise<T> => {
@@ -75,6 +95,22 @@ export const createWorkspaceRequest = async (payload: CreateWorkspacePayload) =>
   return data.project;
 };
 
+export const searchGiteaRepos = async (query: string) => {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set('q', query.trim());
+  const response = await api.get(`/gitea/repos?${params.toString()}`);
+  const data = await parseJson<GiteaRepoSearchResponse>(response);
+
+  if (!response.ok) {
+    throw new Error(data.details || data.error || 'Failed to search Gitea repos');
+  }
+
+  return {
+    repos: data.repos || [],
+    defaultOrg: data.defaultOrg || 'keylink-studio',
+  };
+};
+
 const buildCloneProgressQuery = ({
   workspacePath,
   githubUrl,
@@ -106,7 +142,7 @@ const buildCloneProgressQuery = ({
 
 export const cloneWorkspaceWithProgress = (
   params: CloneWorkspaceParams,
-  handlers: CloneProgressHandlers,
+  handlers: ProgressHandlers,
 ) =>
   new Promise<Record<string, unknown> | undefined>((resolve, reject) => {
     const query = buildCloneProgressQuery(params);
@@ -146,5 +182,65 @@ export const cloneWorkspaceWithProgress = (
 
     eventSource.onerror = () => {
       settle(() => reject(new Error('Connection lost during clone')));
+    };
+  });
+
+export const createWithGitProgress = (
+  params: CreateWithGitParams,
+  handlers: ProgressHandlers,
+) =>
+  new Promise<CreateWithGitResult>((resolve, reject) => {
+    const query = new URLSearchParams({
+      workspaceType: params.workspaceType,
+      gitRemoteMode: params.gitRemoteMode,
+    });
+    if (params.workspacePath.trim()) query.set('workspacePath', params.workspacePath.trim());
+    if (params.prdProjectName.trim()) query.set('prdProjectName', params.prdProjectName.trim());
+    if (params.gitRemoteMode === 'create') {
+      query.set('gitCreateName', params.gitCreateName.trim());
+      query.set('gitCreateOrg', params.gitCreateOrg.trim());
+      query.set('gitCreatePrivate', params.gitCreatePrivate ? 'true' : 'false');
+    }
+    if (params.gitRemoteMode === 'pick' && params.gitPickedRepo) {
+      query.set('gitPickedRepoFullName', params.gitPickedRepo.full_name);
+    }
+
+    const authToken = localStorage.getItem('auth-token');
+    if (authToken) query.set('token', authToken);
+
+    const eventSource = new EventSource(`/api/projects/create-with-git?${query.toString()}`);
+    let settled = false;
+
+    const settle = (cb: () => void) => {
+      if (settled) return;
+      settled = true;
+      eventSource.close();
+      cb();
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as CloneProgressEvent & CreateWithGitResult;
+
+        if (payload.type === 'progress' && payload.message) {
+          handlers.onProgress(payload.message);
+          return;
+        }
+
+        if (payload.type === 'complete') {
+          settle(() => resolve({ project: payload.project, remote: payload.remote }));
+          return;
+        }
+
+        if (payload.type === 'error') {
+          settle(() => reject(new Error(payload.message || 'Failed to create project')));
+        }
+      } catch (error) {
+        console.error('Error parsing create-with-git event:', error);
+      }
+    };
+
+    eventSource.onerror = () => {
+      settle(() => reject(new Error('Connection lost during project creation')));
     };
   });

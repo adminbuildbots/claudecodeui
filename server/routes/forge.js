@@ -1,48 +1,11 @@
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 import { authenticateToken } from '../middleware/auth.js';
+import { GITEA_URL, giteaFetch } from './giteaClient.js';
 
 const router = express.Router();
 
-// Parse the Gitea personal access token from the git credentials file.
-// Format: https://kitadmin:<token>@git.keylinkit.net
-function getGiteaToken() {
-  const credPaths = [
-    path.join(os.homedir(), '.config', 'git', 'credentials'),
-    path.join(os.homedir(), '.git-credentials'),
-  ];
-  for (const p of credPaths) {
-    try {
-      const content = fs.readFileSync(p, 'utf-8');
-      const match = content.match(/https?:\/\/[^:]+:([^@]+)@git\.keylinkit\.net/);
-      if (match) return match[1];
-    } catch {
-      // try next path
-    }
-  }
-  return null;
-}
-
-const GITEA_URL = 'https://git.keylinkit.net';
 const GITEA_ORG = 'keylink-studio';
 const PRD_REPO = 'forge-prds';
-
-async function giteaFetch(endpoint, options = {}) {
-  const token = getGiteaToken();
-  if (!token) throw new Error('Gitea token not found in git credentials');
-
-  const res = await fetch(`${GITEA_URL}/api/v1${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `token ${token}`,
-      ...options.headers,
-    },
-  });
-  return res;
-}
 
 // Ensure the forge-prds repo exists under the org. Idempotent.
 async function ensureRepo() {

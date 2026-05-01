@@ -59,6 +59,7 @@ import mcpUtilsRoutes from './routes/mcp-utils.js';
 import commandsRoutes from './routes/commands.js';
 import settingsRoutes from './routes/settings.js';
 import forgeRoutes from './routes/forge.js';
+import giteaRoutes from './routes/gitea.js';
 import agentRoutes from './routes/agent.js';
 import projectsRoutes, { WORKSPACES_ROOT, validateWorkspacePath } from './routes/projects.js';
 import cliAuthRoutes from './routes/cli-auth.js';
@@ -389,6 +390,7 @@ app.use('/api/commands', authenticateToken, commandsRoutes);
 // Settings API Routes (protected)
 app.use('/api/settings', authenticateToken, settingsRoutes);
 app.use('/api/forge', forgeRoutes);
+app.use('/api/gitea', giteaRoutes);
 
 // CLI Authentication API Routes (protected)
 app.use('/api/cli', authenticateToken, cliAuthRoutes);
