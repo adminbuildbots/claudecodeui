@@ -228,17 +228,22 @@ RUN HUSKY=0 npm ci
 COPY --chown=node:node . .
 RUN npm run build
 
-USER node
-ENV NODE_ENV=production
-EXPOSE 3001
+# Pre-create /home/node/.config as node-owned. Without this, the
+# ./data/git bind mount at /home/node/.config/git causes Docker to
+# auto-create the parent /home/node/.config as root-owned, which then
+# blocks `bw` (and any other tool) from mkdir-ing siblings under it.
+USER root
+RUN mkdir -p /home/node/.config && chown node:node /home/node/.config
 
 # bw-init wrapper: auto-unlock Vaultwarden at startup, export BW_SESSION
 # into env, then exec the original CMD. Fail-open if creds aren't configured
 # (logs friendly message and starts cloudcli normally).
 COPY --chown=node:node scripts/bw-init.sh /usr/local/bin/bw-init.sh
-USER root
 RUN chmod 755 /usr/local/bin/bw-init.sh
+
 USER node
+ENV NODE_ENV=production
+EXPOSE 3001
 
 ENTRYPOINT ["/usr/local/bin/bw-init.sh"]
 CMD ["node", "server/index.js"]
