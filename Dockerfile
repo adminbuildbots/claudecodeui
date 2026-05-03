@@ -60,6 +60,15 @@ RUN npm install -g ruflo
 # in chat sessions. Pure JS, no native deps, ~10-20 MB.
 RUN npm install -g task-master-ai
 
+# Bitwarden CLI (`bw`) for Vaultwarden access. Auto-unlocked at container
+# startup by /usr/local/bin/bw-init.sh using a service-account API key +
+# master password from .env (BW_CLIENTID, BW_CLIENTSECRET, BW_PASSWORD).
+# After unlock, BW_SESSION is exported to all child processes — Claude
+# shells inherit it and can call `bw get/list/search` without credentials.
+# Scoped to the read-only "CloudCLI Tools" collection per CLAUDE.md
+# Vaultwarden integration design.
+RUN npm install -g @bitwarden/cli
+
 # WORKAROUND 1: ruflo's bundled @xenova/transformers v2.17.2 hardcodes its
 # model cache to `<package-install-dir>/.cache`, which is read-only to the
 # `node` user inside the container. The library does NOT respect any env
@@ -223,4 +232,13 @@ USER node
 ENV NODE_ENV=production
 EXPOSE 3001
 
+# bw-init wrapper: auto-unlock Vaultwarden at startup, export BW_SESSION
+# into env, then exec the original CMD. Fail-open if creds aren't configured
+# (logs friendly message and starts cloudcli normally).
+COPY --chown=node:node scripts/bw-init.sh /usr/local/bin/bw-init.sh
+USER root
+RUN chmod 755 /usr/local/bin/bw-init.sh
+USER node
+
+ENTRYPOINT ["/usr/local/bin/bw-init.sh"]
 CMD ["node", "server/index.js"]
