@@ -25,7 +25,7 @@ import type {
 
 type ProjectCreationWizardProps = {
   onClose: () => void;
-  onProjectCreated?: (project?: Record<string, unknown>) => void;
+  onProjectCreated?: (project?: Record<string, unknown>, workspaceType?: WorkspaceType) => void;
 };
 
 const DEFAULT_GITEA_ORG = 'keylink-studio';
@@ -212,7 +212,7 @@ export default function ProjectCreationWizard({
           { onProgress: setProgressMessage },
         );
 
-        onProjectCreated?.(project);
+        onProjectCreated?.(project, formState.workspaceType);
         onClose();
         return;
       }
@@ -231,7 +231,7 @@ export default function ProjectCreationWizard({
         { onProgress: setProgressMessage },
       );
 
-      onProjectCreated?.(result.project);
+      onProjectCreated?.(result.project, result.workspaceType ?? formState.workspaceType);
       onClose();
     } catch (createError) {
       const errorMessage =

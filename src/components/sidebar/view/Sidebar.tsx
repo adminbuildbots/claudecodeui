@@ -27,6 +27,7 @@ function Sidebar({
   onNewSession,
   onSessionDelete,
   onProjectDelete,
+  onSetActiveTab,
   isLoading,
   loadingProgress,
   onRefresh,
@@ -123,13 +124,24 @@ function Sidebar({
     document.body.classList.toggle('pwa-mode', isPWA);
   }, [isPWA]);
 
-  const handleProjectCreated = () => {
+  const handleProjectCreated = async (
+    project?: Record<string, unknown>,
+    workspaceType?: string,
+  ) => {
+    // Refresh the project list so the new project shows up in the sidebar.
     if (window.refreshProjects) {
-      void window.refreshProjects();
+      await window.refreshProjects();
+    } else {
+      window.location.reload();
       return;
     }
 
-    window.location.reload();
+    // For "From PRD" projects, auto-select the new project and open the PRD tab
+    // so the user lands directly in the PRD-authoring surface.
+    if (workspaceType === 'from-prd' && project && typeof project.name === 'string') {
+      onProjectSelect(project as Project);
+      onSetActiveTab?.('prd');
+    }
   };
 
   const projectListProps: SidebarProjectListProps = {

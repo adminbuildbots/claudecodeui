@@ -39,6 +39,7 @@ type ProgressHandlers = {
 
 type CreateWithGitResult = {
   project?: Record<string, unknown>;
+  workspaceType?: WorkspaceType;
   remote?: { full_name: string; html_url: string } | null;
 };
 
@@ -228,7 +229,13 @@ export const createWithGitProgress = (
         }
 
         if (payload.type === 'complete') {
-          settle(() => resolve({ project: payload.project, remote: payload.remote }));
+          settle(() =>
+            resolve({
+              project: payload.project,
+              workspaceType: payload.workspaceType,
+              remote: payload.remote,
+            }),
+          );
           return;
         }
 

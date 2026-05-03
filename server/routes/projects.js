@@ -5,6 +5,7 @@ import { spawn } from 'child_process';
 import os from 'os';
 import { addProjectManually } from '../projects.js';
 import { DEFAULT_GITEA_ORG, GITEA_URL, getGiteaToken, giteaFetch } from './giteaClient.js';
+import { PRD_CLAUDE_MD } from '../templates/prdClaudeMd.js';
 
 const router = express.Router();
 
@@ -667,6 +668,8 @@ router.get('/create-with-git', async (req, res) => {
       }
     }
 
+    const isFromPrd = workspaceType === 'from-prd';
+
     // Run the git plumbing for the chosen mode.
     if (gitRemoteMode === 'pick' && (workspaceType === 'new' || workspaceType === 'from-prd')) {
       sendEvent('progress', { message: `Cloning ${remote.full_name}…` });
@@ -676,6 +679,21 @@ router.get('/create-with-git', async (req, res) => {
         token: giteaToken,
       });
       if (!cloneResult.ok) return fail(cloneResult.error);
+
+      // Add PRD scaffolding on top of the cloned content as a separate commit.
+      if (isFromPrd) {
+        sendEvent('progress', { message: 'Scaffolding PRD project…' });
+        await scaffoldFromPrdProject(absolutePath);
+        const scaffoldCommit = await commitScaffoldingChanges(absolutePath, sendEvent);
+        if (!scaffoldCommit.ok) return fail(scaffoldCommit.error);
+        sendEvent('progress', { message: 'Pushing PRD scaffolding…' });
+        const push = await runGit(['push', '-u', 'origin', 'HEAD'], {
+          cwd: absolutePath,
+          sendEvent,
+          token: giteaToken,
+        });
+        if (!push.ok) return fail(push.error);
+      }
     } else if (gitRemoteMode === 'create' || gitRemoteMode === 'pick' || gitRemoteMode === 'none') {
       // existing-* and new/from-prd-create/none all need a local repo first.
       const gitDir = path.join(absolutePath, '.git');
@@ -688,6 +706,13 @@ router.get('/create-with-git', async (req, res) => {
         sendEvent('progress', { message: 'Initializing git repo…' });
         const initResult = await runGit(['init', '-b', 'main'], { cwd: absolutePath, sendEvent });
         if (!initResult.ok) return fail(initResult.error);
+      }
+
+      // PRD scaffolding for from-prd lands BEFORE remote add so the initial
+      // commit (create mode) naturally picks it up.
+      if (isFromPrd) {
+        sendEvent('progress', { message: 'Scaffolding PRD project…' });
+        await scaffoldFromPrdProject(absolutePath);
       }
 
       if (remote) {
@@ -734,6 +759,7 @@ router.get('/create-with-git', async (req, res) => {
     const project = await addProjectManually(absolutePath);
     sendEvent('complete', {
       project,
+      workspaceType,
       remote: remote
         ? {
             full_name: remote.full_name,
@@ -748,6 +774,55 @@ router.get('/create-with-git', async (req, res) => {
     return fail(error.message || 'Failed to create project');
   }
 });
+
+// PRD-project scaffolding: drop a CLAUDE.md (PRD-authoring system prompt) and a
+// minimal .taskmaster/ skeleton so the existing Tasks tab detects the project
+// and the existing PRD editor has somewhere to save drafts.
+async function scaffoldFromPrdProject(workspacePath) {
+  // CLAUDE.md — only write if the workspace doesn't already have one.
+  const claudeMdPath = path.join(workspacePath, 'CLAUDE.md');
+  const claudeMdExists = await fs.access(claudeMdPath).then(() => true).catch(() => false);
+  if (!claudeMdExists) {
+    await fs.writeFile(claudeMdPath, PRD_CLAUDE_MD, 'utf-8');
+  }
+
+  // .taskmaster/ skeleton.
+  const taskmasterDir = path.join(workspacePath, '.taskmaster');
+  await fs.mkdir(path.join(taskmasterDir, 'docs'), { recursive: true });
+  await fs.mkdir(path.join(taskmasterDir, 'tasks'), { recursive: true });
+
+  const tasksJsonPath = path.join(taskmasterDir, 'tasks', 'tasks.json');
+  const tasksJsonExists = await fs.access(tasksJsonPath).then(() => true).catch(() => false);
+  if (!tasksJsonExists) {
+    await fs.writeFile(
+      tasksJsonPath,
+      JSON.stringify({ master: { tasks: [] } }, null, 2) + '\n',
+      'utf-8',
+    );
+  }
+}
+
+// Stage + commit any scaffolding diffs (called after a clone for the pick path).
+async function commitScaffoldingChanges(workspacePath, sendEvent) {
+  const add = await runGit(['add', 'CLAUDE.md', '.taskmaster'], { cwd: workspacePath, sendEvent });
+  if (!add.ok) return add;
+
+  // Bail cleanly if there's nothing to commit (e.g. cloned repo already had it).
+  const diff = await runGit(['diff', '--cached', '--quiet'], { cwd: workspacePath, ignoreError: true });
+  if (diff.ok) return { ok: true };
+
+  const commitEnv = {
+    GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || 'cloudcli',
+    GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL || 'cloudcli@local',
+    GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME || 'cloudcli',
+    GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || 'cloudcli@local',
+  };
+  return runGit(['commit', '-m', 'Add PRD authoring scaffolding'], {
+    cwd: workspacePath,
+    sendEvent,
+    extraEnv: commitEnv,
+  });
+}
 
 function slugifyProjectName(name) {
   return name

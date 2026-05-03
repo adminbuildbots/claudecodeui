@@ -1,4 +1,4 @@
-import type { LoadingProgress, Project, ProjectSession, SessionProvider } from '../../../types/app';
+import type { AppTab, LoadingProgress, Project, ProjectSession, SessionProvider } from '../../../types/app';
 
 export type ProjectSortOrder = 'name' | 'date';
 
@@ -30,6 +30,7 @@ export type SidebarProps = {
   onNewSession: (project: Project) => void;
   onSessionDelete?: (sessionId: string) => void;
   onProjectDelete?: (projectName: string) => void;
+  onSetActiveTab?: (tab: AppTab) => void;
   isLoading: boolean;
   loadingProgress: LoadingProgress | null;
   onRefresh: () => Promise<void> | void;
