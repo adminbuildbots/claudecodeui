@@ -6,6 +6,7 @@ import os from 'os';
 import { addProjectManually } from '../projects.js';
 import { DEFAULT_GITEA_ORG, GITEA_URL, getGiteaToken, giteaFetch } from './giteaClient.js';
 import { PRD_CLAUDE_MD } from '../templates/prdClaudeMd.js';
+import { PRD_SLASH_COMMANDS } from '../templates/prdSlashCommands.js';
 
 const router = express.Router();
 
@@ -775,9 +776,11 @@ router.get('/create-with-git', async (req, res) => {
   }
 });
 
-// PRD-project scaffolding: drop a CLAUDE.md (PRD-authoring system prompt) and a
-// minimal .taskmaster/ skeleton so the existing Tasks tab detects the project
-// and the existing PRD editor has somewhere to save drafts.
+// PRD-project scaffolding: drop a CLAUDE.md (PRD-authoring system prompt), a
+// minimal .taskmaster/ skeleton (so the Tasks tab detects the project), and a
+// .claude/commands/ directory of project-scoped slash commands (/save-prd,
+// /generate-tasks, /submit-to-forge, /push-to-console) the user can invoke
+// from chat.
 async function scaffoldFromPrdProject(workspacePath) {
   // CLAUDE.md — only write if the workspace doesn't already have one.
   const claudeMdPath = path.join(workspacePath, 'CLAUDE.md');
@@ -800,11 +803,24 @@ async function scaffoldFromPrdProject(workspacePath) {
       'utf-8',
     );
   }
+
+  // .claude/commands/ — project-scoped slash commands. Each .md file is sent to
+  // Claude as the prompt when the matching /command is invoked. Idempotent —
+  // existing files are left alone so user customizations survive re-runs.
+  const commandsDir = path.join(workspacePath, '.claude', 'commands');
+  await fs.mkdir(commandsDir, { recursive: true });
+  for (const [filename, content] of Object.entries(PRD_SLASH_COMMANDS)) {
+    const cmdPath = path.join(commandsDir, filename);
+    const cmdExists = await fs.access(cmdPath).then(() => true).catch(() => false);
+    if (!cmdExists) {
+      await fs.writeFile(cmdPath, content, 'utf-8');
+    }
+  }
 }
 
 // Stage + commit any scaffolding diffs (called after a clone for the pick path).
 async function commitScaffoldingChanges(workspacePath, sendEvent) {
-  const add = await runGit(['add', 'CLAUDE.md', '.taskmaster'], { cwd: workspacePath, sendEvent });
+  const add = await runGit(['add', 'CLAUDE.md', '.taskmaster', '.claude'], { cwd: workspacePath, sendEvent });
   if (!add.ok) return add;
 
   // Bail cleanly if there's nothing to commit (e.g. cloned repo already had it).
