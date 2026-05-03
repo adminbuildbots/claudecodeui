@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
 import { QuickSettingsPanel } from '../../quick-settings-panel';
@@ -287,6 +287,31 @@ function ChatInterface({
     window.addEventListener('prd:send-to-chat', handler);
     return () => window.removeEventListener('prd:send-to-chat', handler);
   }, [setInput, textareaRef]);
+
+  // Auto-kickoff: a project-creation flow (e.g. "From PRD" wizard) can dispatch
+  // chat:auto-send with a prompt to be set AND immediately submitted as the
+  // first message, so Claude proactively opens the conversation following its
+  // CLAUDE.md system instructions. Two-frame delay so React commits the input
+  // value into inputValueRef (line 708 in useChatComposerState) before submit
+  // reads from the ref.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ prompt: string }>).detail;
+      if (!detail?.prompt || !selectedProject) return;
+      setInput(detail.prompt);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const fakeEvent = {
+            preventDefault: () => {},
+            currentTarget: textareaRef.current,
+          } as unknown as FormEvent<HTMLFormElement>;
+          void handleSubmit(fakeEvent);
+        });
+      });
+    };
+    window.addEventListener('chat:auto-send', handler);
+    return () => window.removeEventListener('chat:auto-send', handler);
+  }, [handleSubmit, selectedProject, setInput, textareaRef]);
 
   if (!selectedProject) {
     const selectedProviderLabel =

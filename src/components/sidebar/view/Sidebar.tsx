@@ -136,11 +136,27 @@ function Sidebar({
       return;
     }
 
-    // For "From PRD" projects, auto-select the new project and open the PRD tab
-    // so the user lands directly in the PRD-authoring surface.
+    // For "From PRD" projects, drop the user straight into a chat with Claude
+    // and have Claude proactively open the conversation by asking for the PRD
+    // upload. The CLAUDE.md scaffolded into the new workspace tells Claude to
+    // lead with the upload request, so the auto-sent message is just the
+    // user's nominal "let's begin" — Claude's response is the substantive
+    // first message the user sees.
     if (workspaceType === 'from-prd' && project && typeof project.name === 'string') {
       onProjectSelect(project as Project);
-      onSetActiveTab?.('prd');
+      onSetActiveTab?.('chat');
+      // Wait for the project context to settle into ChatInterface before
+      // dispatching — the listener bails if selectedProject isn't set yet.
+      setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('chat:auto-send', {
+            detail: {
+              prompt:
+                "I'm starting a new PRD project. Please walk me through what you need from me to begin.",
+            },
+          }),
+        );
+      }, 250);
     }
   };
 
