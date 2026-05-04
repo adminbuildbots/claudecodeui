@@ -27,21 +27,29 @@ fi
 # Point bw at our self-hosted Vaultwarden. Idempotent.
 bw config server https://vault.keylinkit.net >/dev/null 2>&1 || true
 
-# Authenticate with the API key (idempotent — bw login --check handles re-runs).
-if ! bw login --check >/dev/null 2>&1; then
-  if ! bw login --apikey >/dev/null 2>&1; then
-    echo "[bw-init] bw login --apikey failed (check BW_CLIENTID/BW_CLIENTSECRET)." >&2
-    unset BW_PASSWORD
-    exec "$@"
-  fi
+# Always start from clean state. Without this, stale login state from a prior
+# container can cause `bw unlock` to fail with the right password — the local
+# bw config dir gets into a half-baked state that only logout fully clears.
+bw logout >/dev/null 2>&1 || true
+
+# Authenticate with the API key. Reads BW_CLIENTID + BW_CLIENTSECRET from env.
+if ! bw login --apikey >/dev/null 2>&1; then
+  echo "[bw-init] bw login --apikey failed (check BW_CLIENTID/BW_CLIENTSECRET)." >&2
+  unset BW_PASSWORD
+  exec "$@"
 fi
 
 # Unlock and capture the session token. --raw prints just the token to stdout.
-SESSION="$(bw unlock --raw --passwordenv BW_PASSWORD 2>/dev/null)" || {
-  echo "[bw-init] bw unlock failed (check BW_PASSWORD)." >&2
+# Capture stderr to a temp file so we can surface the actual error if unlock fails.
+ERR=$(mktemp)
+SESSION="$(bw unlock --raw --passwordenv BW_PASSWORD 2>"$ERR")"
+if [ -z "$SESSION" ]; then
+  echo "[bw-init] bw unlock failed: $(cat "$ERR")" >&2
+  rm -f "$ERR"
   unset BW_PASSWORD
   exec "$@"
-}
+fi
+rm -f "$ERR"
 
 # Scrub the password so child processes (Claude shells, etc.) never see it.
 # BW_SESSION is what's needed for every subsequent `bw` call.
