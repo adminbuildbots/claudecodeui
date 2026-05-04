@@ -24,20 +24,22 @@ if [ -z "${BW_CLIENTID:-}" ] || [ -z "${BW_CLIENTSECRET:-}" ] || [ -z "${BW_PASS
   exec "$@"
 fi
 
-# Point bw at our self-hosted Vaultwarden. Idempotent.
+# Always start from a fully clean bw state. `bw logout` clears the server
+# config too, so we re-set it AFTER logout. Without this clean reset, stale
+# login state from a prior container start can poison the unlock step even
+# when the master password is correct.
+bw logout >/dev/null 2>&1 || true
 bw config server https://vault.keylinkit.net >/dev/null 2>&1 || true
 
-# Always start from clean state. Without this, stale login state from a prior
-# container can cause `bw unlock` to fail with the right password — the local
-# bw config dir gets into a half-baked state that only logout fully clears.
-bw logout >/dev/null 2>&1 || true
-
 # Authenticate with the API key. Reads BW_CLIENTID + BW_CLIENTSECRET from env.
-if ! bw login --apikey >/dev/null 2>&1; then
-  echo "[bw-init] bw login --apikey failed (check BW_CLIENTID/BW_CLIENTSECRET)." >&2
+LOGIN_ERR=$(mktemp)
+if ! bw login --apikey 2>"$LOGIN_ERR" >/dev/null; then
+  echo "[bw-init] bw login --apikey failed: $(cat "$LOGIN_ERR")" >&2
+  rm -f "$LOGIN_ERR"
   unset BW_PASSWORD
   exec "$@"
 fi
+rm -f "$LOGIN_ERR"
 
 # Unlock and capture the session token. --raw prints just the token to stdout.
 # Capture stderr to a temp file so we can surface the actual error if unlock fails.
