@@ -37,6 +37,20 @@ if [ -d "$DEFAULTS_DIR/commands" ]; then
 fi
 echo "[claude-init] slash commands: installed $INSTALLED_CMDS missing, $(ls "$USER_COMMANDS_DIR"/*.md 2>/dev/null | wc -l) total in user scope"
 
+#----- DigitalOcean API token (optional, vault-sourced) ----------------------
+# If BW_SESSION is in env (vault unlocked successfully), try to fetch the DO
+# API token from the vault item literally named "DigitalOcean API Token" and
+# export as DIGITALOCEAN_ACCESS_TOKEN so the lab-do MCP server (and any
+# direct doctl calls from Claude shells) can authenticate. Falls back to
+# whatever's in env if the vault lookup fails.
+if [ -n "${BW_SESSION:-}" ] && [ -z "${DIGITALOCEAN_ACCESS_TOKEN:-}" ]; then
+  DO_TOKEN=$(bw get password "DigitalOcean API Token" 2>/dev/null)
+  if [ -n "$DO_TOKEN" ]; then
+    export DIGITALOCEAN_ACCESS_TOKEN="$DO_TOKEN"
+    echo "[claude-init] DIGITALOCEAN_ACCESS_TOKEN sourced from vault item 'DigitalOcean API Token'"
+  fi
+fi
+
 #----- MCP servers ------------------------------------------------------------
 # Snapshot what's already registered so we don't churn through `claude mcp add`
 # for servers that already exist (which is slow and prints noisy warnings).
@@ -60,5 +74,6 @@ ensure_mcp playwright           -- playwright-mcp --headless --isolated --execut
 ensure_mcp task-master-ai       -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" -- npx -y task-master-ai
 ensure_mcp sequential-thinking  -- npx -y @modelcontextprotocol/server-sequential-thinking
 ensure_mcp context7             -- npx -y @upstash/context7-mcp
+ensure_mcp lab-do               -e DIGITALOCEAN_ACCESS_TOKEN="${DIGITALOCEAN_ACCESS_TOKEN:-}" -- node /app/mcp-servers/digitalocean/server.js
 
 exec "$@"

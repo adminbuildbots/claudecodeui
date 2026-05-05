@@ -69,6 +69,15 @@ RUN npm install -g task-master-ai
 # Vaultwarden integration design.
 RUN npm install -g @bitwarden/cli
 
+# DigitalOcean CLI (doctl) — auth via DIGITALOCEAN_ACCESS_TOKEN env var,
+# populated by claude-init.sh from the vault item "DigitalOcean API Token".
+# Underpins the lab-do MCP server (mcp-servers/digitalocean) which exposes
+# droplet management as MCP tools to Claude.
+ARG DOCTL_VERSION=1.110.0
+RUN curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}/doctl-${DOCTL_VERSION}-linux-amd64.tar.gz" \
+    | tar -xz -C /usr/local/bin doctl \
+    && chmod +x /usr/local/bin/doctl
+
 # WORKAROUND 1: ruflo's bundled @xenova/transformers v2.17.2 hardcodes its
 # model cache to `<package-install-dir>/.cache`, which is read-only to the
 # `node` user inside the container. The library does NOT respect any env
@@ -227,6 +236,18 @@ RUN HUSKY=0 npm ci
 # Source + build the client bundle (vite -> dist/).
 COPY --chown=node:node . .
 RUN npm run build
+
+# Install deps for the lab MCP servers shipped in this image. Each is a
+# self-contained Node project under mcp-servers/<name>/ with its own
+# package.json. claude-init.sh registers each one via `claude mcp add` so
+# Claude sees the tools they expose. Adding a new server: drop it under
+# mcp-servers/<name>/ and add an `ensure_mcp` line to claude-init.sh.
+RUN for dir in /app/mcp-servers/*/; do \
+      if [ -f "$dir/package.json" ]; then \
+        echo "Installing deps for MCP server: $dir" && \
+        cd "$dir" && npm install --omit=dev && cd /app; \
+      fi; \
+    done
 
 # Pre-create /home/node/.config as node-owned. Without this, the
 # ./data/git bind mount at /home/node/.config/git causes Docker to
