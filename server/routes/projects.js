@@ -789,6 +789,21 @@ async function scaffoldFromPrdProject(workspacePath) {
     await fs.writeFile(claudeMdPath, PRD_CLAUDE_MD, 'utf-8');
   }
 
+  // .lab/environments.json — both production and development start as null.
+  // Discoverable by the cloudcli UI's header pills and the lab-environments
+  // MCP server. Operator (or Claude via /assign-environments) fills these in
+  // once the project has actual prod/dev infrastructure to point at.
+  const labEnvFile = path.join(workspacePath, '.lab', 'environments.json');
+  const labEnvExists = await fs.access(labEnvFile).then(() => true).catch(() => false);
+  if (!labEnvExists) {
+    await fs.mkdir(path.join(workspacePath, '.lab'), { recursive: true });
+    await fs.writeFile(
+      labEnvFile,
+      JSON.stringify({ production: null, development: null }, null, 2) + '\n',
+      'utf-8',
+    );
+  }
+
   // .taskmaster/ skeleton.
   const taskmasterDir = path.join(workspacePath, '.taskmaster');
   await fs.mkdir(path.join(taskmasterDir, 'docs'), { recursive: true });
@@ -820,7 +835,7 @@ async function scaffoldFromPrdProject(workspacePath) {
 
 // Stage + commit any scaffolding diffs (called after a clone for the pick path).
 async function commitScaffoldingChanges(workspacePath, sendEvent) {
-  const add = await runGit(['add', 'CLAUDE.md', '.taskmaster', '.claude'], { cwd: workspacePath, sendEvent });
+  const add = await runGit(['add', 'CLAUDE.md', '.taskmaster', '.claude', '.lab'], { cwd: workspacePath, sendEvent });
   if (!add.ok) return add;
 
   // Bail cleanly if there's nothing to commit (e.g. cloned repo already had it).

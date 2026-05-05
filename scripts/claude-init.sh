@@ -83,5 +83,6 @@ ensure_mcp sequential-thinking  -- npx -y @modelcontextprotocol/server-sequentia
 ensure_mcp context7             -- npx -y @upstash/context7-mcp
 ensure_mcp lab-do               -e DIGITALOCEAN_ACCESS_TOKEN="${DIGITALOCEAN_ACCESS_TOKEN:-}" -- node /app/mcp-servers/digitalocean/server.js
 ensure_mcp lab-kitvm3           -- node /app/mcp-servers/kitvm3/server.js
+ensure_mcp lab-environments     -- node /app/mcp-servers/lab-environments/server.js
 
 exec "$@"
