@@ -44,10 +44,17 @@ echo "[claude-init] slash commands: installed $INSTALLED_CMDS missing, $(ls "$US
 # direct doctl calls from Claude shells) can authenticate. Falls back to
 # whatever's in env if the vault lookup fails.
 if [ -n "${BW_SESSION:-}" ] && [ -z "${DIGITALOCEAN_ACCESS_TOKEN:-}" ]; then
+  # Try Login-type first (token in password field), then Secure Note (token
+  # in notes body). Either storage convention works.
   DO_TOKEN=$(bw get password "DigitalOcean API Token" 2>/dev/null)
+  DO_TOKEN_SOURCE=password
+  if [ -z "$DO_TOKEN" ]; then
+    DO_TOKEN=$(bw get notes "DigitalOcean API Token" 2>/dev/null | head -1 | tr -d '[:space:]')
+    DO_TOKEN_SOURCE=notes
+  fi
   if [ -n "$DO_TOKEN" ]; then
     export DIGITALOCEAN_ACCESS_TOKEN="$DO_TOKEN"
-    echo "[claude-init] DIGITALOCEAN_ACCESS_TOKEN sourced from vault item 'DigitalOcean API Token'"
+    echo "[claude-init] DIGITALOCEAN_ACCESS_TOKEN sourced from vault item 'DigitalOcean API Token' (${DO_TOKEN_SOURCE} field, ${#DO_TOKEN} chars)"
   fi
 fi
 
