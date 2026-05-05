@@ -236,10 +236,16 @@ USER root
 RUN mkdir -p /home/node/.config && chown node:node /home/node/.config
 
 # bw-init wrapper: auto-unlock Vaultwarden at startup, export BW_SESSION
-# into env, then exec the original CMD. Fail-open if creds aren't configured
-# (logs friendly message and starts cloudcli normally).
+# into env, then chain to claude-init.sh. Fail-open if creds aren't
+# configured (logs friendly message and continues).
+#
+# claude-init wrapper: rehydrate user-scope Claude Code config that should
+# always be present — slash commands at ~/.claude/commands/ and the 5
+# locally-registered MCP servers. Recovers from bind-mount drift / Claude
+# Code schema migrations that strip them. Idempotent. Always exec's CMD.
 COPY --chown=node:node scripts/bw-init.sh /usr/local/bin/bw-init.sh
-RUN chmod 755 /usr/local/bin/bw-init.sh
+COPY --chown=node:node scripts/claude-init.sh /usr/local/bin/claude-init.sh
+RUN chmod 755 /usr/local/bin/bw-init.sh /usr/local/bin/claude-init.sh
 
 USER node
 ENV NODE_ENV=production

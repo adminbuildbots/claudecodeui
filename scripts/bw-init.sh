@@ -21,7 +21,7 @@ set -e
 
 if [ -z "${BW_CLIENTID:-}" ] || [ -z "${BW_CLIENTSECRET:-}" ] || [ -z "${BW_PASSWORD:-}" ]; then
   echo "[bw-init] BW_CLIENTID/BW_CLIENTSECRET/BW_PASSWORD not all set; skipping vault unlock." >&2
-  exec "$@"
+  exec /usr/local/bin/claude-init.sh "$@"
 fi
 
 # Always start from a fully clean bw state. `bw logout` clears the server
@@ -37,7 +37,7 @@ if ! bw login --apikey 2>"$LOGIN_ERR" >/dev/null; then
   echo "[bw-init] bw login --apikey failed: $(cat "$LOGIN_ERR")" >&2
   rm -f "$LOGIN_ERR"
   unset BW_PASSWORD
-  exec "$@"
+  exec /usr/local/bin/claude-init.sh "$@"
 fi
 rm -f "$LOGIN_ERR"
 
@@ -49,7 +49,7 @@ if [ -z "$SESSION" ]; then
   echo "[bw-init] bw unlock failed: $(cat "$ERR")" >&2
   rm -f "$ERR"
   unset BW_PASSWORD
-  exec "$@"
+  exec /usr/local/bin/claude-init.sh "$@"
 fi
 rm -f "$ERR"
 
@@ -60,4 +60,4 @@ unset BW_PASSWORD
 export BW_SESSION="$SESSION"
 
 echo "[bw-init] vault unlocked, BW_SESSION exported (${#SESSION} chars)." >&2
-exec "$@"
+exec /usr/local/bin/claude-init.sh "$@"
