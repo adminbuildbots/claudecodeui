@@ -78,6 +78,18 @@ RUN curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v${DOCTL
     | tar -xz -C /usr/local/bin doctl \
     && chmod +x /usr/local/bin/doctl
 
+# cloudflared client — used as SSH ProxyCommand for connections to KITVM3
+# (Hyper-V host on the office network, reachable only via Cloudflare Tunnel
+# at kitvm3.keylinkit.net per the SSH config in ~/.ssh/config). Underpins
+# the lab-kitvm3 MCP server (mcp-servers/kitvm3) which exposes Hyper-V VM
+# management as MCP tools to Claude. The .deb install registers cloudflared
+# as a service we DON'T want — we only need the binary as a client. Use
+# the standalone binary download instead.
+ARG CLOUDFLARED_VERSION=2026.3.0
+RUN curl -fsSL -o /usr/local/bin/cloudflared \
+      "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64" \
+    && chmod +x /usr/local/bin/cloudflared
+
 # WORKAROUND 1: ruflo's bundled @xenova/transformers v2.17.2 hardcodes its
 # model cache to `<package-install-dir>/.cache`, which is read-only to the
 # `node` user inside the container. The library does NOT respect any env
