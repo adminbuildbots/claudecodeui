@@ -40,9 +40,9 @@ const server = new Server(
 
 // ---------- helpers --------------------------------------------------------
 
-function execProcess(cmd, args, { timeoutSeconds = SSH_TIMEOUT_DEFAULT } = {}) {
+function spawnOnce(cmd, args, { timeoutSeconds }) {
   return new Promise((resolve) => {
-    const proc = spawn(cmd, args, { env: process.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn(cmd, args, { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let timer = null;
@@ -62,8 +62,21 @@ function execProcess(cmd, args, { timeoutSeconds = SSH_TIMEOUT_DEFAULT } = {}) {
       if (timer) clearTimeout(timer);
       resolve({ code: -1, stdout: '', stderr: `spawn error: ${err.message}` });
     });
-    proc.stdin.end();
   });
+}
+
+async function execProcess(cmd, args, { timeoutSeconds = SSH_TIMEOUT_DEFAULT } = {}) {
+  // Cold-start retry. The first ssh through cloudflared from a fresh process
+  // can take 20-40s to establish the edge connection, well beyond ssh's
+  // ConnectTimeout. Retry once on the specific banner-timeout failure.
+  // Subsequent calls hit a warm cloudflared connection and finish in <2s.
+  let result = await spawnOnce(cmd, args, { timeoutSeconds });
+  const isBannerTimeout = result.code !== 0 && result.stderr.includes('banner exchange');
+  if (isBannerTimeout && cmd === 'ssh') {
+    process.stderr.write('[lab-kitvm3] cold cloudflared connection timed out, retrying once...\n');
+    result = await spawnOnce(cmd, args, { timeoutSeconds });
+  }
+  return result;
 }
 
 /**
@@ -74,7 +87,7 @@ function execProcess(cmd, args, { timeoutSeconds = SSH_TIMEOUT_DEFAULT } = {}) {
  */
 async function runPS(psCommand, { json = true, jsonDepth = 4, timeoutSeconds } = {}) {
   const wrapped = json
-    ? `${psCommand} | ConvertTo-Json -Depth ${jsonDepth} -Compress -EnumsAsStrings`
+    ? `${psCommand} | ConvertTo-Json -Depth ${jsonDepth} -Compress`
     : psCommand;
 
   const result = await execProcess('ssh', [SSH_HOST, wrapped], { timeoutSeconds });
