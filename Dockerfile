@@ -71,7 +71,15 @@ RUN npm install -g @anthropic-ai/claude-code
 # starts; no first-run install race, and rebuilds pin the version.
 # Registration as a Claude MCP server is a runtime step done once per
 # fresh ~/.claude — see CLAUDE.md "Ruflo / MCP" section.
-RUN npm install -g ruflo
+#
+# PINNED to 3.5.78 deliberately. The two memory/security workarounds below
+# (lines for memory-bridge.js and @claude-flow/security) reference paths
+# and behaviors specific to this version. Upstream ruflo also (as of
+# 2026-05-06) tags pre-release alphas as `latest` on npm — so an unpinned
+# `npm install -g ruflo` will silently pick up a 3.7.0-alpha.X that breaks
+# the build. Bump only after re-validating the workarounds against the
+# new version's source.
+RUN npm install -g ruflo@3.5.78
 
 # TaskMaster AI (eyaltoledano/claude-task-master). AI-driven task management
 # that decomposes PRDs into sequenced dev tasks. cloudcli's Settings → Tasks
