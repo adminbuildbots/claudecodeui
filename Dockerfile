@@ -42,6 +42,26 @@ RUN pip3 install --break-system-packages --no-cache-dir \
       "mcp>=1.0.0" \
       "psycopg[binary]>=3.2.0"
 
+# Graphify (safishamsi/graphify) — knowledge-graph builder + MCP server for
+# codebases. Installed but NOT auto-registered as a user-scope MCP because
+# the server needs a per-project graph.json that doesn't exist by default.
+# Each project does `graphify .` once, then `claude mcp add graphify
+# --scope project -- python -m graphify.serve ./graphify-out/graph.json`.
+# The /graphify-init slash command bundles both steps.
+#
+# Gotcha: the PyPI package name is `graphifyy` with a DOUBLE Y — `graphify`
+# (single y) on PyPI is an unrelated package. The upstream README calls
+# this out explicitly. The `[mcp]` extra pulls in the MCP SDK needed to
+# run `python -m graphify.serve`. ~150 MB layer (~25 tree-sitter language
+# wheels download at install time, no GPU/daemon needed at runtime).
+#
+# Do NOT run `graphify claude install` inside the container — it auto-
+# mutates the bind-mounted ~/.claude/settings.json with a PreToolUse hook
+# and writes a section into CLAUDE.md, which is intrusive and out of scope
+# for the lab's bind-mounted config. Manual registration via the slash
+# command is the supported path.
+RUN pip3 install --break-system-packages --no-cache-dir 'graphifyy[mcp]'
+
 # Claude Code CLI itself. cloudcli's "Connect Claude" terminal shells out
 # to `claude`, so it has to be on PATH inside the container.
 RUN npm install -g @anthropic-ai/claude-code
