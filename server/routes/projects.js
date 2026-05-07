@@ -584,7 +584,15 @@ router.get('/create-with-git', async (req, res) => {
       gitCreateOrg,
       gitCreatePrivate,
       gitPickedRepoFullName,
+      consoleProjectId,
+      consoleProjectName,
     } = req.query;
+
+    // Console board linkage — surfaced to scaffolding so .lab/console-project.json
+    // gets written when the user picked or created a Console project in the wizard.
+    const consoleProject = (consoleProjectId && String(consoleProjectId).trim())
+      ? { id: String(consoleProjectId).trim(), name: (consoleProjectName || '').trim() }
+      : null;
 
     if (!['existing', 'new', 'from-prd'].includes(workspaceType)) {
       return fail('workspaceType must be existing, new, or from-prd');
@@ -684,7 +692,7 @@ router.get('/create-with-git', async (req, res) => {
       // Add PRD scaffolding on top of the cloned content as a separate commit.
       if (isFromPrd) {
         sendEvent('progress', { message: 'Scaffolding PRD project…' });
-        await scaffoldFromPrdProject(absolutePath);
+        await scaffoldFromPrdProject(absolutePath, { consoleProject });
         const scaffoldCommit = await commitScaffoldingChanges(absolutePath, sendEvent);
         if (!scaffoldCommit.ok) return fail(scaffoldCommit.error);
         sendEvent('progress', { message: 'Pushing PRD scaffolding…' });
@@ -713,7 +721,7 @@ router.get('/create-with-git', async (req, res) => {
       // commit (create mode) naturally picks it up.
       if (isFromPrd) {
         sendEvent('progress', { message: 'Scaffolding PRD project…' });
-        await scaffoldFromPrdProject(absolutePath);
+        await scaffoldFromPrdProject(absolutePath, { consoleProject });
       }
 
       if (remote) {
@@ -781,7 +789,7 @@ router.get('/create-with-git', async (req, res) => {
 // .claude/commands/ directory of project-scoped slash commands (/save-prd,
 // /generate-tasks, /submit-to-forge, /push-to-console) the user can invoke
 // from chat.
-async function scaffoldFromPrdProject(workspacePath) {
+async function scaffoldFromPrdProject(workspacePath, { consoleProject = null } = {}) {
   // CLAUDE.md — only write if the workspace doesn't already have one.
   const claudeMdPath = path.join(workspacePath, 'CLAUDE.md');
   const claudeMdExists = await fs.access(claudeMdPath).then(() => true).catch(() => false);
@@ -793,15 +801,35 @@ async function scaffoldFromPrdProject(workspacePath) {
   // Discoverable by the cloudcli UI's header pills and the lab-environments
   // MCP server. Operator (or Claude via /assign-environments) fills these in
   // once the project has actual prod/dev infrastructure to point at.
-  const labEnvFile = path.join(workspacePath, '.lab', 'environments.json');
+  const labDir = path.join(workspacePath, '.lab');
+  await fs.mkdir(labDir, { recursive: true });
+  const labEnvFile = path.join(labDir, 'environments.json');
   const labEnvExists = await fs.access(labEnvFile).then(() => true).catch(() => false);
   if (!labEnvExists) {
-    await fs.mkdir(path.join(workspacePath, '.lab'), { recursive: true });
     await fs.writeFile(
       labEnvFile,
       JSON.stringify({ production: null, development: null }, null, 2) + '\n',
       'utf-8',
     );
+  }
+
+  // .lab/console-project.json — link to the Console board (console.keylinkit.com)
+  // selected during the wizard. Read by /push-to-console to know which project to
+  // POST tasks to. Skipped when the user opted out in the wizard.
+  if (consoleProject && consoleProject.id) {
+    const consoleProjectFile = path.join(labDir, 'console-project.json');
+    const consoleProjectExists = await fs.access(consoleProjectFile).then(() => true).catch(() => false);
+    if (!consoleProjectExists) {
+      await fs.writeFile(
+        consoleProjectFile,
+        JSON.stringify({
+          id: String(consoleProject.id),
+          name: consoleProject.name || '',
+          linked_at: new Date().toISOString(),
+        }, null, 2) + '\n',
+        'utf-8',
+      );
+    }
   }
 
   // .taskmaster/ skeleton.

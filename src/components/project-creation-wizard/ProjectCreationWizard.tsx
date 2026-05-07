@@ -3,6 +3,7 @@ import { FolderPlus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import ErrorBanner from './components/ErrorBanner';
 import StepConfiguration from './components/StepConfiguration';
+import StepConsoleProject from './components/StepConsoleProject';
 import StepGitRemote from './components/StepGitRemote';
 import StepReview from './components/StepReview';
 import StepTypeSelection from './components/StepTypeSelection';
@@ -15,6 +16,7 @@ import {
   searchGiteaRepos,
 } from './data/workspaceApi';
 import type {
+  ConsoleProjectSelection,
   GitRemoteMode,
   GiteaRepoSummary,
   TokenMode,
@@ -43,6 +45,7 @@ const initialFormState: WizardFormState = {
   tokenMode: 'stored',
   selectedGithubToken: '',
   newGithubToken: '',
+  consoleProject: null,
 };
 
 export default function ProjectCreationWizard({
@@ -180,14 +183,26 @@ export default function ProjectCreationWizard({
         setError(validation);
         return;
       }
-      setStep(4);
+      // From-PRD projects get a Console-board linkage step before review.
+      // Other workspace types skip directly to review.
+      setStep(formState.workspaceType === 'from-prd' ? 4 : 5);
+      return;
+    }
+
+    if (step === 4) {
+      // Console step is optional — null selection means "skip", which is fine.
+      setStep(5);
     }
   }, [formState, step, t]);
 
   const handleBack = useCallback(() => {
     setError(null);
-    setStep((previousStep) => (previousStep > 1 ? ((previousStep - 1) as WizardStep) : previousStep));
-  }, []);
+    setStep((previousStep) => {
+      // From step 5 back to 4 only makes sense for from-prd; otherwise jump to 3.
+      if (previousStep === 5 && formState.workspaceType !== 'from-prd') return 3;
+      return previousStep > 1 ? ((previousStep - 1) as WizardStep) : previousStep;
+    });
+  }, [formState.workspaceType]);
 
   const handleCreate = useCallback(async () => {
     setIsCreating(true);
@@ -227,6 +242,7 @@ export default function ProjectCreationWizard({
           gitCreateOrg: formState.gitCreateOrg,
           gitCreatePrivate: formState.gitCreatePrivate,
           gitPickedRepo: formState.gitPickedRepo,
+          consoleProject: formState.consoleProject,
         },
         { onProgress: setProgressMessage },
       );
@@ -273,7 +289,7 @@ export default function ProjectCreationWizard({
           </button>
         </div>
 
-        <WizardProgress step={step} />
+        <WizardProgress step={step} workspaceType={formState.workspaceType} />
 
         <div className="min-h-[300px] space-y-6 p-6">
           {error && <ErrorBanner message={error} />}
@@ -328,7 +344,17 @@ export default function ProjectCreationWizard({
             />
           )}
 
-          {step === 4 && (
+          {step === 4 && formState.workspaceType === 'from-prd' && (
+            <StepConsoleProject
+              selection={formState.consoleProject}
+              isCreating={isCreating}
+              onSelectionChange={(selection: ConsoleProjectSelection | null) =>
+                updateField('consoleProject', selection)
+              }
+            />
+          )}
+
+          {step === 5 && (
             <StepReview
               formState={formState}
               selectedTokenName={selectedTokenName}

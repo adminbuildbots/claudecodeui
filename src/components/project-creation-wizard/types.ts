@@ -1,6 +1,31 @@
-export type WizardStep = 1 | 2 | 3 | 4;
+export type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 export type WorkspaceType = 'existing' | 'new' | 'from-prd';
+
+export type ConsoleProject = {
+  id: string;
+  board_id: string;
+  name: string;
+  description: string;
+  type: 'dev' | 'client' | 'infra' | string;
+  status: 'active' | 'archived' | string;
+  prd_url: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConsoleProjectListResponse = {
+  projects?: ConsoleProject[];
+  next_cursor?: string | null;
+  error?: string;
+};
+
+export type ConsoleProjectSelection = {
+  id: string;
+  name: string;
+  isNew: boolean;
+};
 
 export type TokenMode = 'stored' | 'new' | 'none';
 
@@ -100,4 +125,7 @@ export type WizardFormState = {
   tokenMode: TokenMode;
   selectedGithubToken: string;
   newGithubToken: string;
+
+  // Console board linkage (from-prd flow only — see StepConsoleProject).
+  consoleProject: ConsoleProjectSelection | null;
 };

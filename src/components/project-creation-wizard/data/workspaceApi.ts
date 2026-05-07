@@ -2,6 +2,7 @@ import { api } from '../../../utils/api';
 import type {
   BrowseFilesystemResponse,
   CloneProgressEvent,
+  ConsoleProjectSelection,
   CreateFolderResponse,
   CreateWorkspacePayload,
   CreateWorkspaceResponse,
@@ -31,6 +32,7 @@ type CreateWithGitParams = {
   gitCreateOrg: string;
   gitCreatePrivate: boolean;
   gitPickedRepo: GiteaRepoSummary | null;
+  consoleProject: ConsoleProjectSelection | null;
 };
 
 type ProgressHandlers = {
@@ -204,6 +206,10 @@ export const createWithGitProgress = (
     }
     if (params.gitRemoteMode === 'pick' && params.gitPickedRepo) {
       query.set('gitPickedRepoFullName', params.gitPickedRepo.full_name);
+    }
+    if (params.consoleProject?.id) {
+      query.set('consoleProjectId', params.consoleProject.id);
+      query.set('consoleProjectName', params.consoleProject.name || '');
     }
 
     const authToken = localStorage.getItem('auth-token');

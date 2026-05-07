@@ -119,6 +119,17 @@ export default function StepReview({
               <span className="text-xs text-gray-900 dark:text-white">{authenticationLabel}</span>
             </div>
           )}
+
+          {formState.workspaceType === 'from-prd' && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600 dark:text-gray-400">Console project:</span>
+              <span className="text-right text-xs text-gray-900 dark:text-white">
+                {formState.consoleProject
+                  ? `${formState.consoleProject.name}${formState.consoleProject.isNew ? ' (new)' : ''}`
+                  : 'None (skipped)'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
