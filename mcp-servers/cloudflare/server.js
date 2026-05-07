@@ -265,6 +265,26 @@ const tools = [
     },
   },
   {
+    name: 'cf_dns_record_update',
+    description: 'Update an existing DNS record (PATCH semantics — only the fields you pass are changed). Use cf_dns_record_list to find the record_id first. Common use: flip the proxied flag, change a CNAME target, retarget an A record to a new IP without delete+recreate.',
+    inputSchema: {
+      type: 'object',
+      required: ['account', 'zone', 'record_id'],
+      properties: {
+        account: { type: 'string', description: 'Account slug (vault item suffix)' },
+        zone: { type: 'string', description: 'Zone ID or zone name' },
+        record_id: { type: 'string', description: 'DNS record ID (from cf_dns_record_list)' },
+        type: { type: 'string', description: 'Optional: new record type (rare — usually you want to delete+create instead)' },
+        name: { type: 'string', description: 'Optional: new record name (FQDN)' },
+        content: { type: 'string', description: 'Optional: new record value (IP, target hostname, TXT content, etc.)' },
+        ttl: { type: 'number', description: 'Optional: new TTL in seconds. 1 = automatic.' },
+        proxied: { type: 'boolean', description: 'Optional: new proxy setting (orange cloud). Only valid for A/AAAA/CNAME.' },
+        priority: { type: 'number', description: 'Optional: new priority (MX records).' },
+        comment: { type: 'string', description: 'Optional: new human-readable comment.' },
+      },
+    },
+  },
+  {
     name: 'cf_tunnel_list',
     description: 'List Cloudflare Tunnels (cfd_tunnel) in an account. By default includes tunnels in any state — use is_deleted=false to filter to only active ones.',
     inputSchema: {
@@ -318,6 +338,19 @@ const tools = [
         hostname: { type: 'string', description: 'FQDN to route (e.g. "lab.keylinkit.net")' },
         tunnel_id: { type: 'string', description: 'Tunnel UUID — the CNAME points to <tunnel_id>.cfargotunnel.com' },
         comment: { type: 'string', description: 'Optional comment on the DNS record.' },
+      },
+    },
+  },
+  {
+    name: 'cf_tunnel_config_get',
+    description: 'Read the current ingress configuration for a remotely-managed Cloudflare Tunnel. Use before cf_tunnel_config_put if you want to read-modify-write rather than overwrite the whole ingress array. Returns the full config block including ingress rules and warp_routing settings. Locally-managed tunnels return an empty config from this endpoint — their actual config lives in config.yml on the host.',
+    inputSchema: {
+      type: 'object',
+      required: ['account', 'tunnel_id'],
+      properties: {
+        account: { type: 'string', description: 'Account slug (vault item suffix)' },
+        account_id: { type: 'string', description: 'Cloudflare account ID. Auto-resolved if the token sees exactly one account.' },
+        tunnel_id: { type: 'string', description: 'Tunnel UUID' },
       },
     },
   },
@@ -431,6 +464,17 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         return ok(resp.result);
       }
 
+      case 'cf_dns_record_update': {
+        const zoneId = await resolveZoneId(args.account, args.zone);
+        const body = {};
+        for (const k of ['type', 'name', 'content', 'ttl', 'proxied', 'priority', 'comment']) {
+          if (args[k] !== undefined) body[k] = args[k];
+        }
+        if (Object.keys(body).length === 0) return errorResult('cf_dns_record_update needs at least one field to change');
+        const resp = await cfFetch(args.account, `/zones/${zoneId}/dns_records/${args.record_id}`, { method: 'PATCH', body });
+        return ok(resp.result);
+      }
+
       case 'cf_tunnel_list': {
         const accountId = await resolveAccountId(args.account, args.account_id);
         const tunnels = await cfFetchAll(args.account, `/accounts/${accountId}/cfd_tunnel`, {
@@ -486,6 +530,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         };
         if (args.comment) body.comment = args.comment;
         const resp = await cfFetch(args.account, `/zones/${zoneId}/dns_records`, { method: 'POST', body });
+        return ok(resp.result);
+      }
+
+      case 'cf_tunnel_config_get': {
+        const accountId = await resolveAccountId(args.account, args.account_id);
+        const resp = await cfFetch(args.account, `/accounts/${accountId}/cfd_tunnel/${args.tunnel_id}/configurations`);
         return ok(resp.result);
       }
 
