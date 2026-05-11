@@ -48,7 +48,9 @@ let tokenCache = { value: null, fetchedAt: 0 };
 
 // ---------- token resolution ----------------------------------------------
 
-function execProcess(cmd, args, { timeoutSeconds = 10 } = {}) {
+// bw CLI is genuinely slow on cold-start — ~8s typical even on warm vault.
+// Anything under ~30s would intermittently false-positive a timeout.
+function execProcess(cmd, args, { timeoutSeconds = 30 } = {}) {
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
