@@ -137,7 +137,9 @@
     "steps": {
       "type": "Type",
       "configure": "Configure",
-      "gitRemote": "Git remote",
+      "gitRemote": "Git",
+      "console": "Console",
+      "environments": "Env",
       "confirm": "Confirm"
     },
     "step1": {

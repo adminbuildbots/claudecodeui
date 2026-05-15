@@ -40,11 +40,11 @@ export default function WizardProgress({ step, workspaceType }: WizardProgressPr
       case 2:
         return 'Configure';
       case 3:
-        return 'Git Remote';
+        return 'Git';
       case 4:
         return 'Console';
       case 5:
-        return 'Environments';
+        return 'Env';
       case 6:
       default:
         return 'Confirm';
