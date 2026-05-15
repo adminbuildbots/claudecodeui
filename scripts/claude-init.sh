@@ -85,5 +85,7 @@ ensure_mcp lab-do               -e DIGITALOCEAN_ACCESS_TOKEN="${DIGITALOCEAN_ACC
 ensure_mcp lab-kitvm3           -- node /app/mcp-servers/kitvm3/server.js
 ensure_mcp lab-environments     -- node /app/mcp-servers/lab-environments/server.js
 ensure_mcp lab-cf               -- node /app/mcp-servers/cloudflare/server.js
+ensure_mcp lab-inmotion         -- node /app/mcp-servers/inmotion/server.js
+ensure_mcp lab-aws-ec2          -- node /app/mcp-servers/aws-ec2/server.js
 
 exec "$@"

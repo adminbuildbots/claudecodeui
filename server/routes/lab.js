@@ -85,11 +85,39 @@ async function writeEnvironmentsFile(projectPath, envs) {
   await fs.writeFile(path.join(dir, 'environments.json'), content, 'utf-8');
 }
 
+function normalizeExtras(entry) {
+  // Pull through the optional rich-doc fields (services / urls / deploy_notes)
+  // that any kind may carry. Validate shapes lightly; drop anything malformed.
+  const out = {};
+  if (Array.isArray(entry.services)) {
+    out.services = entry.services
+      .filter((s) => s && typeof s === 'object' && s.name)
+      .map((s) => ({
+        name: String(s.name),
+        port: s.port != null ? Number(s.port) : undefined,
+        restart: s.restart ? String(s.restart) : undefined,
+      }));
+  }
+  if (entry.urls && typeof entry.urls === 'object' && !Array.isArray(entry.urls)) {
+    out.urls = Object.fromEntries(
+      Object.entries(entry.urls)
+        .filter(([k, v]) => typeof k === 'string' && typeof v === 'string')
+        .map(([k, v]) => [k, String(v)]),
+    );
+  }
+  if (typeof entry.deploy_notes === 'string') {
+    out.deploy_notes = entry.deploy_notes;
+  }
+  return out;
+}
+
 function normalizeEnvironmentEntry(entry) {
   if (entry === null || entry === undefined) return null;
   if (typeof entry !== 'object') return null;
 
   const kind = entry.kind;
+  const extras = normalizeExtras(entry);
+
   if (kind === 'do_droplet') {
     if (entry.id === undefined && !entry.name) return null;
     return {
@@ -98,6 +126,7 @@ function normalizeEnvironmentEntry(entry) {
       name: entry.name ? String(entry.name) : null,
       region: entry.region ? String(entry.region) : null,
       ip: entry.ip ? String(entry.ip) : null,
+      ...extras,
     };
   }
   if (kind === 'kitvm3_vm') {
@@ -106,6 +135,34 @@ function normalizeEnvironmentEntry(entry) {
       kind: 'kitvm3_vm',
       name: String(entry.name),
       state: entry.state != null ? entry.state : null,
+      ...extras,
+    };
+  }
+  if (kind === 'inmotion_cpanel') {
+    if (!entry.server || !entry.account) return null;
+    return {
+      kind: 'inmotion_cpanel',
+      server: String(entry.server),
+      account: String(entry.account),
+      domain: entry.domain ? String(entry.domain) : null,
+      ip: entry.ip ? String(entry.ip) : null,
+      home_path: entry.home_path ? String(entry.home_path) : `/home/${entry.account}`,
+      ...extras,
+    };
+  }
+  if (kind === 'ec2_instance') {
+    if (!entry.instance_id || !entry.region || !entry.public_ip || !entry.ssh_user || !entry.ssh_key_path) {
+      return null;
+    }
+    return {
+      kind: 'ec2_instance',
+      instance_id: String(entry.instance_id),
+      region: String(entry.region),
+      public_ip: String(entry.public_ip),
+      ssh_user: String(entry.ssh_user),
+      ssh_key_path: String(entry.ssh_key_path),
+      code_path: entry.code_path ? String(entry.code_path) : null,
+      ...extras,
     };
   }
   return null;

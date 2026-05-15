@@ -1,6 +1,16 @@
 export type EnvironmentSlot = 'production' | 'development';
 
-export type DropletEntry = {
+// Optional rich-doc fields any environment entry can carry. Read by AI
+// sessions alongside the connection fields; the picker UI doesn't edit
+// these (users set them via the /assign-environments slash command or
+// directly in .lab/environments.json).
+export type EnvironmentExtras = {
+  services?: Array<{ name: string; port?: number; restart?: string }>;
+  urls?: Record<string, string>;
+  deploy_notes?: string;
+};
+
+export type DropletEntry = EnvironmentExtras & {
   kind: 'do_droplet';
   id: number | null;
   name: string | null;
@@ -8,13 +18,37 @@ export type DropletEntry = {
   ip?: string | null;
 };
 
-export type Kitvm3Entry = {
+export type Kitvm3Entry = EnvironmentExtras & {
   kind: 'kitvm3_vm';
   name: string;
   state?: number | null;
 };
 
-export type EnvironmentEntry = DropletEntry | Kitvm3Entry | null;
+export type InmotionEntry = EnvironmentExtras & {
+  kind: 'inmotion_cpanel';
+  server: string;       // vault slug, e.g. "whm01"
+  account: string;      // cPanel username
+  domain?: string | null;
+  ip?: string | null;
+  home_path?: string;
+};
+
+export type Ec2Entry = EnvironmentExtras & {
+  kind: 'ec2_instance';
+  instance_id: string;
+  region: string;
+  public_ip: string;
+  ssh_user: string;
+  ssh_key_path: string;     // relative to project root, gitignored
+  code_path?: string | null;
+};
+
+export type EnvironmentEntry =
+  | DropletEntry
+  | Kitvm3Entry
+  | InmotionEntry
+  | Ec2Entry
+  | null;
 
 export type ProjectEnvironments = {
   production: EnvironmentEntry;

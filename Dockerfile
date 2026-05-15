@@ -106,6 +106,17 @@ RUN curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v${DOCTL
     | tar -xz -C /usr/local/bin doctl \
     && chmod +x /usr/local/bin/doctl
 
+# AWS CLI v2 — underpins the lab-aws-ec2 MCP server (mcp-servers/aws-ec2).
+# Auth is per-call via env vars (AWS_ACCESS_KEY_ID/SECRET) sourced from
+# Vaultwarden by the MCP, so no shared ~/.aws config in the image. v2 is
+# preferred over v1 (deprecated for new installs); the official .zip
+# installer is the supported path on Debian (apt's awscli is v1).
+ARG AWSCLI_VERSION=2.17.42
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-${AWSCLI_VERSION}.zip" -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli \
+    && rm -rf /tmp/awscliv2.zip /tmp/aws
+
 # cloudflared client — used as SSH ProxyCommand for connections to KITVM3
 # (Hyper-V host on the office network, reachable only via Cloudflare Tunnel
 # at kitvm3.keylinkit.net per the SSH config in ~/.ssh/config). Underpins

@@ -12,6 +12,8 @@ function formatEntry(entry: EnvironmentEntry): string {
   if (!entry) return 'not set';
   if (entry.kind === 'do_droplet') return entry.name || `droplet ${entry.id ?? '?'}`;
   if (entry.kind === 'kitvm3_vm') return entry.name;
+  if (entry.kind === 'inmotion_cpanel') return `${entry.server}:${entry.account}`;
+  if (entry.kind === 'ec2_instance') return entry.public_ip || entry.instance_id;
   return 'unknown';
 }
 
