@@ -1,4 +1,5 @@
 import { api } from '../../../utils/api';
+import type { EnvironmentEntry } from '../../lab-environments/types';
 import type {
   BrowseFilesystemResponse,
   CloneProgressEvent,
@@ -33,6 +34,8 @@ type CreateWithGitParams = {
   gitCreatePrivate: boolean;
   gitPickedRepo: GiteaRepoSummary | null;
   consoleProject: ConsoleProjectSelection | null;
+  prodEnvironment: EnvironmentEntry;
+  devEnvironment: EnvironmentEntry;
 };
 
 type ProgressHandlers = {
@@ -210,6 +213,14 @@ export const createWithGitProgress = (
     if (params.consoleProject?.id) {
       query.set('consoleProjectId', params.consoleProject.id);
       query.set('consoleProjectName', params.consoleProject.name || '');
+    }
+    // Environments — JSON-encoded because the entries carry richer per-kind
+    // shape (ssh_user, server slug, etc.) than the flat consoleProject params.
+    if (params.prodEnvironment) {
+      query.set('prodEnvironment', JSON.stringify(params.prodEnvironment));
+    }
+    if (params.devEnvironment) {
+      query.set('devEnvironment', JSON.stringify(params.devEnvironment));
     }
 
     const authToken = localStorage.getItem('auth-token');

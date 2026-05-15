@@ -139,11 +139,95 @@ function matchesToolPermission(entry, toolName, input) {
 }
 
 /**
+ * Builds a small "lab context" markdown block summarising any project-scoped
+ * lab state we want Claude to see at session start without it having to call
+ * MCP tools. Sources, in order:
+ *   - <cwd>/.lab/environments.json (Prod/Dev picks)
+ *   - <cwd>/.lab/console-project.json (Console board linkage)
+ *   - <cwd>/.git/config (origin remote URL)
+ *
+ * Returns '' when nothing is present so non-lab projects don't pollute the
+ * system prompt. Never throws — all reads are best-effort.
+ *
+ * @param {string} cwd - Project working directory
+ * @returns {Promise<string>}
+ */
+async function buildLabContextBriefing(cwd) {
+  if (!cwd) return '';
+
+  const lines = [];
+
+  // .lab/environments.json — Prod/Dev picks.
+  try {
+    const raw = await fs.readFile(path.join(cwd, '.lab', 'environments.json'), 'utf-8');
+    const parsed = JSON.parse(raw);
+    const formatEntry = (entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      switch (entry.kind) {
+        case 'do_droplet':
+          return `DO droplet ${entry.name || `id ${entry.id}`}${entry.ip ? ` (${entry.ip})` : ''}${entry.region ? ` in ${entry.region}` : ''}`;
+        case 'kitvm3_vm':
+          return `Hyper-V VM ${entry.name} on KITVM3`;
+        case 'inmotion_cpanel':
+          return `cPanel ${entry.server}:${entry.account}${entry.domain ? ` (${entry.domain})` : ''}`;
+        case 'ec2_instance':
+          return `EC2 ${entry.instance_id} in ${entry.region}${entry.public_ip ? ` (${entry.public_ip})` : ''}; SSH ${entry.ssh_user}@... with key ${entry.ssh_key_path}`;
+        default:
+          return null;
+      }
+    };
+    const prod = formatEntry(parsed?.production);
+    const dev = formatEntry(parsed?.development);
+    if (prod) lines.push(`- **Production:** ${prod}`);
+    if (dev) lines.push(`- **Development:** ${dev}`);
+  } catch {
+    // ENOENT or malformed — silently skip.
+  }
+
+  // .lab/console-project.json — Console board linkage.
+  try {
+    const raw = await fs.readFile(path.join(cwd, '.lab', 'console-project.json'), 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed?.id) {
+      lines.push(`- **Console project:** ${parsed.name || '(unnamed)'} (id: \`${parsed.id}\`) — \`/push-to-console\` targets this board.`);
+    }
+  } catch {
+    // skip
+  }
+
+  // .git/config — origin remote URL. Strip embedded auth credentials so we
+  // never echo a token into the system prompt.
+  try {
+    const raw = await fs.readFile(path.join(cwd, '.git', 'config'), 'utf-8');
+    const match = raw.match(/\[remote "origin"\][\s\S]*?url\s*=\s*(\S+)/);
+    if (match) {
+      let url = match[1];
+      url = url.replace(/^(https?:\/\/)[^@\/]+@/, '$1');
+      lines.push(`- **Git remote:** ${url}`);
+    }
+  } catch {
+    // skip
+  }
+
+  if (lines.length === 0) return '';
+
+  return [
+    '',
+    '## Lab project context',
+    '',
+    'The following project-scoped lab state is set for this workspace. Use these as the source of truth for any "deploy to prod/dev", "push tasks to Console", or "where does this repo live" question — no need to grep or call MCP tools to discover them.',
+    '',
+    ...lines,
+    '',
+  ].join('\n');
+}
+
+/**
  * Maps CLI options to SDK-compatible options format
  * @param {Object} options - CLI options
- * @returns {Object} SDK-compatible options
+ * @returns {Promise<Object>} SDK-compatible options
  */
-function mapCliOptionsToSDK(options = {}) {
+async function mapCliOptionsToSDK(options = {}) {
   const { sessionId, cwd, toolsSettings, permissionMode } = options;
 
   const sdkOptions = {};
@@ -202,6 +286,15 @@ function mapCliOptionsToSDK(options = {}) {
     type: 'preset',
     preset: 'claude_code'  // Required to use CLAUDE.md
   };
+
+  // Append a small "lab context" block summarising .lab/*.json and the git
+  // remote so Claude has Prod/Dev/Console/repo facts upfront — no need to
+  // call MCP tools or grep .git/config at session start. Empty string when
+  // none of those sources exist (keeps non-lab projects clean).
+  const labBriefing = await buildLabContextBriefing(cwd);
+  if (labBriefing) {
+    sdkOptions.systemPrompt.append = labBriefing;
+  }
 
   // Map setting sources for CLAUDE.md loading
   // This loads CLAUDE.md from project, user (~/.config/claude/CLAUDE.md), and local directories
@@ -482,7 +575,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
 
   try {
     // Map CLI options to SDK format
-    const sdkOptions = mapCliOptionsToSDK(options);
+    const sdkOptions = await mapCliOptionsToSDK(options);
 
     // Load MCP configuration
     const mcpServers = await loadMcpConfig(options.cwd);

@@ -586,6 +586,8 @@ router.get('/create-with-git', async (req, res) => {
       gitPickedRepoFullName,
       consoleProjectId,
       consoleProjectName,
+      prodEnvironment: prodEnvironmentRaw,
+      devEnvironment: devEnvironmentRaw,
     } = req.query;
 
     // Console board linkage — surfaced to scaffolding so .lab/console-project.json
@@ -593,6 +595,21 @@ router.get('/create-with-git', async (req, res) => {
     const consoleProject = (consoleProjectId && String(consoleProjectId).trim())
       ? { id: String(consoleProjectId).trim(), name: (consoleProjectName || '').trim() }
       : null;
+
+    // Environment picks (Prod/Dev) — wizard sends each entry JSON-encoded, or
+    // omits the param entirely if the slot was left empty. Malformed JSON falls
+    // back to null silently rather than failing the create.
+    const parseEnvParam = (raw) => {
+      if (!raw) return null;
+      try {
+        const parsed = JSON.parse(String(raw));
+        return parsed && typeof parsed === 'object' ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+    const prodEnvironment = parseEnvParam(prodEnvironmentRaw);
+    const devEnvironment = parseEnvParam(devEnvironmentRaw);
 
     if (!['existing', 'new', 'from-prd'].includes(workspaceType)) {
       return fail('workspaceType must be existing, new, or from-prd');
@@ -692,7 +709,7 @@ router.get('/create-with-git', async (req, res) => {
       // Add PRD scaffolding on top of the cloned content as a separate commit.
       if (isFromPrd) {
         sendEvent('progress', { message: 'Scaffolding PRD project…' });
-        await scaffoldFromPrdProject(absolutePath, { consoleProject });
+        await scaffoldFromPrdProject(absolutePath, { consoleProject, prodEnvironment, devEnvironment });
         const scaffoldCommit = await commitScaffoldingChanges(absolutePath, sendEvent);
         if (!scaffoldCommit.ok) return fail(scaffoldCommit.error);
         sendEvent('progress', { message: 'Pushing PRD scaffolding…' });
@@ -721,7 +738,7 @@ router.get('/create-with-git', async (req, res) => {
       // commit (create mode) naturally picks it up.
       if (isFromPrd) {
         sendEvent('progress', { message: 'Scaffolding PRD project…' });
-        await scaffoldFromPrdProject(absolutePath, { consoleProject });
+        await scaffoldFromPrdProject(absolutePath, { consoleProject, prodEnvironment, devEnvironment });
       }
 
       if (remote) {
@@ -789,7 +806,10 @@ router.get('/create-with-git', async (req, res) => {
 // .claude/commands/ directory of project-scoped slash commands (/save-prd,
 // /generate-tasks, /submit-to-forge, /push-to-console) the user can invoke
 // from chat.
-async function scaffoldFromPrdProject(workspacePath, { consoleProject = null } = {}) {
+async function scaffoldFromPrdProject(
+  workspacePath,
+  { consoleProject = null, prodEnvironment = null, devEnvironment = null } = {},
+) {
   // CLAUDE.md — only write if the workspace doesn't already have one.
   const claudeMdPath = path.join(workspacePath, 'CLAUDE.md');
   const claudeMdExists = await fs.access(claudeMdPath).then(() => true).catch(() => false);
@@ -797,10 +817,10 @@ async function scaffoldFromPrdProject(workspacePath, { consoleProject = null } =
     await fs.writeFile(claudeMdPath, PRD_CLAUDE_MD, 'utf-8');
   }
 
-  // .lab/environments.json — both production and development start as null.
-  // Discoverable by the cloudcli UI's header pills and the lab-environments
-  // MCP server. Operator (or Claude via /assign-environments) fills these in
-  // once the project has actual prod/dev infrastructure to point at.
+  // .lab/environments.json — seeded with whatever the user picked in the
+  // wizard's Environments step (or nulls if skipped). Discoverable by the
+  // cloudcli UI's header pills and the lab-environments MCP server. Operator
+  // (or Claude via /assign-environments) can change these later.
   const labDir = path.join(workspacePath, '.lab');
   await fs.mkdir(labDir, { recursive: true });
   const labEnvFile = path.join(labDir, 'environments.json');
@@ -808,7 +828,11 @@ async function scaffoldFromPrdProject(workspacePath, { consoleProject = null } =
   if (!labEnvExists) {
     await fs.writeFile(
       labEnvFile,
-      JSON.stringify({ production: null, development: null }, null, 2) + '\n',
+      JSON.stringify(
+        { production: prodEnvironment ?? null, development: devEnvironment ?? null },
+        null,
+        2,
+      ) + '\n',
       'utf-8',
     );
   }

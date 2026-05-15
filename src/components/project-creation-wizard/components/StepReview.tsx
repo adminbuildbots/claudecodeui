@@ -2,6 +2,23 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isSshGitUrl } from '../utils/pathUtils';
 import type { WizardFormState } from '../types';
+import type { EnvironmentEntry } from '../../lab-environments/types';
+
+function formatEnvEntry(entry: EnvironmentEntry): string {
+  if (!entry) return 'Not set';
+  switch (entry.kind) {
+    case 'do_droplet':
+      return `DO droplet · ${entry.name || `id ${entry.id}`}`;
+    case 'kitvm3_vm':
+      return `Hyper-V VM · ${entry.name}`;
+    case 'inmotion_cpanel':
+      return `cPanel · ${entry.server}:${entry.account}`;
+    case 'ec2_instance':
+      return `EC2 · ${entry.instance_id}`;
+    default:
+      return 'Unknown';
+  }
+}
 
 type StepReviewProps = {
   formState: WizardFormState;
@@ -129,6 +146,23 @@ export default function StepReview({
                   : 'None (skipped)'}
               </span>
             </div>
+          )}
+
+          {formState.workspaceType === 'from-prd' && (
+            <>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">Production env:</span>
+                <span className="text-right text-xs text-gray-900 dark:text-white">
+                  {formatEnvEntry(formState.prodEnvironment)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600 dark:text-gray-400">Development env:</span>
+                <span className="text-right text-xs text-gray-900 dark:text-white">
+                  {formatEnvEntry(formState.devEnvironment)}
+                </span>
+              </div>
+            </>
           )}
         </div>
       </div>

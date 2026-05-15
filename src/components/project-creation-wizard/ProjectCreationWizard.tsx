@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderPlus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { EnvironmentEntry } from '../lab-environments/types';
 import ErrorBanner from './components/ErrorBanner';
 import StepConfiguration from './components/StepConfiguration';
 import StepConsoleProject from './components/StepConsoleProject';
+import StepEnvironments from './components/StepEnvironments';
 import StepGitRemote from './components/StepGitRemote';
 import StepReview from './components/StepReview';
 import StepTypeSelection from './components/StepTypeSelection';
@@ -46,6 +48,8 @@ const initialFormState: WizardFormState = {
   selectedGithubToken: '',
   newGithubToken: '',
   consoleProject: null,
+  prodEnvironment: null,
+  devEnvironment: null,
 };
 
 export default function ProjectCreationWizard({
@@ -183,23 +187,29 @@ export default function ProjectCreationWizard({
         setError(validation);
         return;
       }
-      // From-PRD projects get a Console-board linkage step before review.
-      // Other workspace types skip directly to review.
-      setStep(formState.workspaceType === 'from-prd' ? 4 : 5);
+      // From-PRD projects get Console linkage (step 4) and Environments (step 5)
+      // before review. Other workspace types skip directly to review (step 6).
+      setStep(formState.workspaceType === 'from-prd' ? 4 : 6);
       return;
     }
 
     if (step === 4) {
       // Console step is optional — null selection means "skip", which is fine.
       setStep(5);
+      return;
+    }
+
+    if (step === 5) {
+      // Environments step is optional — both slots may be null.
+      setStep(6);
     }
   }, [formState, step, t]);
 
   const handleBack = useCallback(() => {
     setError(null);
     setStep((previousStep) => {
-      // From step 5 back to 4 only makes sense for from-prd; otherwise jump to 3.
-      if (previousStep === 5 && formState.workspaceType !== 'from-prd') return 3;
+      // From step 6 (Review) back: PRD goes to Environments (5), others to Git (3).
+      if (previousStep === 6 && formState.workspaceType !== 'from-prd') return 3;
       return previousStep > 1 ? ((previousStep - 1) as WizardStep) : previousStep;
     });
   }, [formState.workspaceType]);
@@ -243,6 +253,8 @@ export default function ProjectCreationWizard({
           gitCreatePrivate: formState.gitCreatePrivate,
           gitPickedRepo: formState.gitPickedRepo,
           consoleProject: formState.consoleProject,
+          prodEnvironment: formState.prodEnvironment,
+          devEnvironment: formState.devEnvironment,
         },
         { onProgress: setProgressMessage },
       );
@@ -354,7 +366,17 @@ export default function ProjectCreationWizard({
             />
           )}
 
-          {step === 5 && (
+          {step === 5 && formState.workspaceType === 'from-prd' && (
+            <StepEnvironments
+              prodEnvironment={formState.prodEnvironment}
+              devEnvironment={formState.devEnvironment}
+              isCreating={isCreating}
+              onProdChange={(entry: EnvironmentEntry) => updateField('prodEnvironment', entry)}
+              onDevChange={(entry: EnvironmentEntry) => updateField('devEnvironment', entry)}
+            />
+          )}
+
+          {step === 6 && (
             <StepReview
               formState={formState}
               selectedTokenName={selectedTokenName}

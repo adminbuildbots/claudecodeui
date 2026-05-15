@@ -1,4 +1,6 @@
-export type WizardStep = 1 | 2 | 3 | 4 | 5;
+import type { EnvironmentEntry } from '../lab-environments/types';
+
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type WorkspaceType = 'existing' | 'new' | 'from-prd';
 
@@ -128,4 +130,10 @@ export type WizardFormState = {
 
   // Console board linkage (from-prd flow only — see StepConsoleProject).
   consoleProject: ConsoleProjectSelection | null;
+
+  // Prod/Dev environment slots (from-prd flow only — see StepEnvironments).
+  // Both are optional — null means "not set yet"; scaffolder writes whatever
+  // is here into .lab/environments.json, falling back to nulls.
+  prodEnvironment: EnvironmentEntry;
+  devEnvironment: EnvironmentEntry;
 };

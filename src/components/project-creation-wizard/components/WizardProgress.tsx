@@ -10,10 +10,10 @@ type WizardProgressProps = {
 
 export default function WizardProgress({ step, workspaceType }: WizardProgressProps) {
   const { t } = useTranslation();
-  // Step 4 (Console project) only applies to from-prd. Other workspace types
-  // skip directly from step 3 (git remote) to step 5 (review).
-  const showConsoleStep = workspaceType === 'from-prd';
-  const steps: WizardStep[] = showConsoleStep ? [1, 2, 3, 4, 5] : [1, 2, 3, 5];
+  // Steps 4 (Console project) and 5 (Environments) only apply to from-prd.
+  // Other workspace types skip directly from step 3 (git remote) to step 6 (review).
+  const showPrdSteps = workspaceType === 'from-prd';
+  const steps: WizardStep[] = showPrdSteps ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 6];
 
   const labelKey = (currentStep: WizardStep) => {
     switch (currentStep) {
@@ -26,6 +26,8 @@ export default function WizardProgress({ step, workspaceType }: WizardProgressPr
       case 4:
         return 'projectWizard.steps.console';
       case 5:
+        return 'projectWizard.steps.environments';
+      case 6:
       default:
         return 'projectWizard.steps.confirm';
     }
@@ -42,6 +44,8 @@ export default function WizardProgress({ step, workspaceType }: WizardProgressPr
       case 4:
         return 'Console';
       case 5:
+        return 'Environments';
+      case 6:
       default:
         return 'Confirm';
     }

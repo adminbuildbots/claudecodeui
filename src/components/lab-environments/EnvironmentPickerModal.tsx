@@ -21,11 +21,16 @@ import type {
 } from './types';
 
 type EnvironmentPickerModalProps = {
-  projectName: string;
+  // Commit-mode props: omit projectName + onSaved together to enter collect mode.
+  // Commit mode writes to <project>/.lab/environments.json on pick.
+  // Collect mode emits the picked entry via onPick and closes — the caller
+  // (e.g. the project-creation wizard) decides what to do with it.
+  projectName?: string;
+  onSaved?: (updated: ProjectEnvironments) => void;
+  onPick?: (entry: EnvironmentEntry) => void;
   slot: EnvironmentSlot;
   currentEntry: EnvironmentEntry;
   onClose: () => void;
-  onSaved: (updated: ProjectEnvironments) => void;
 };
 
 type Kind = 'do_droplet' | 'kitvm3_vm' | 'inmotion_cpanel' | 'ec2_instance';
@@ -50,8 +55,10 @@ export default function EnvironmentPickerModal({
   currentEntry,
   onClose,
   onSaved,
+  onPick,
 }: EnvironmentPickerModalProps) {
   const isProduction = slot === 'production';
+  const collectMode = !projectName;
 
   // Active tab: start from currentEntry's kind, else a slot-appropriate default.
   const initialKind: Kind = (currentEntry?.kind as Kind | undefined)
@@ -152,11 +159,16 @@ export default function EnvironmentPickerModal({
   // ---------- save -------------------------------------------------------
 
   const persist = async (entry: EnvironmentEntry) => {
+    if (collectMode) {
+      onPick?.(entry);
+      onClose();
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
-      const result = await saveProjectEnvironments(projectName, { [slot]: entry });
-      onSaved(result.environments);
+      const result = await saveProjectEnvironments(projectName as string, { [slot]: entry });
+      onSaved?.(result.environments);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'save failed');
       setSaving(false);
