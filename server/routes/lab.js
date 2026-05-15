@@ -15,6 +15,13 @@ const router = express.Router();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const dropletsCache = { data: null, fetchedAt: 0, error: null };
 const vmsCache = { data: null, fetchedAt: 0, error: null };
+const inmotionServersCache = { data: null, fetchedAt: 0 };
+const inmotionAccountsCache = new Map(); // server slug → { data, fetchedAt }
+const ec2InstancesCache = new Map();     // region → { data, fetchedAt }
+const ec2CredsCache = { data: null, fetchedAt: 0 };
+
+const WHM_VAULT_PREFIX = 'whm-server-';
+const AWS_VAULT_ITEM = process.env.AWS_CREDS_VAULT_ITEM || 'aws-creds-prod';
 
 const ENV_FILE_RELPATH = path.join('.lab', 'environments.json');
 
@@ -286,6 +293,186 @@ router.get('/vms', async (req, res) => {
   vmsCache.fetchedAt = now;
   vmsCache.error = null;
   res.json({ vms, cached: false, fetchedAt: now });
+});
+
+// ---------- inmotion (WHM/cPanel) picker endpoints ------------------------
+
+// Vault items live in the cloudcli@ service account's CloudCLI Tools
+// collection (plus whatever else has been granted). Looking them up here
+// duplicates a little of the lab-inmotion MCP's logic — accepted cost; the
+// MCP server can't be called from cloudcli's express process because MCPs
+// are stdio children of Claude Code, not of cloudcli.
+
+async function bwGetItemJson(name) {
+  const result = await execProcess('bw', ['get', 'item', name], { timeoutSeconds: 30 });
+  if (result.code !== 0 || !result.stdout) {
+    throw new Error(`vault item "${name}" not found: ${result.stderr || 'no output'}`);
+  }
+  return JSON.parse(result.stdout);
+}
+
+// GET /api/lab/inmotion/servers
+router.get('/inmotion/servers', async (req, res) => {
+  const now = Date.now();
+  const force = req.query.refresh === '1';
+  if (!force && inmotionServersCache.data && now - inmotionServersCache.fetchedAt < CACHE_TTL_MS) {
+    return res.json({ servers: inmotionServersCache.data, cached: true, fetchedAt: inmotionServersCache.fetchedAt });
+  }
+  if (!process.env.BW_SESSION) {
+    return res.status(503).json({ error: 'BW_SESSION not set — Vaultwarden CLI is not unlocked.' });
+  }
+  const result = await execProcess('bw', ['list', 'items', '--search', WHM_VAULT_PREFIX], { timeoutSeconds: 30 });
+  if (result.code !== 0) {
+    return res.status(502).json({ error: 'bw list failed', details: result.stderr });
+  }
+  let items;
+  try { items = JSON.parse(result.stdout || '[]'); }
+  catch { return res.status(502).json({ error: 'bw list returned non-JSON' }); }
+
+  // Each whm-server-<slug> item carries its WHM host in the URI field. We
+  // surface that so the picker can show "<slug> — <host>" entries; the
+  // picker doesn't need the token or SSH key (those are server-side only).
+  const servers = items
+    .filter((it) => typeof it?.name === 'string' && it.name.startsWith(WHM_VAULT_PREFIX))
+    .map((it) => {
+      const slug = it.name.slice(WHM_VAULT_PREFIX.length);
+      const uri = it.login?.uris?.[0]?.uri || '';
+      const host = uri.replace(/^https?:\/\//, '').replace(/\/+$/, '').split(':')[0] || null;
+      return { slug, host };
+    })
+    .sort((a, b) => a.slug.localeCompare(b.slug));
+
+  inmotionServersCache.data = servers;
+  inmotionServersCache.fetchedAt = now;
+  res.json({ servers, cached: false, fetchedAt: now });
+});
+
+// GET /api/lab/inmotion/accounts?server=<slug>
+router.get('/inmotion/accounts', async (req, res) => {
+  const slug = String(req.query.server || '').trim();
+  if (!slug) return res.status(400).json({ error: 'server query param is required' });
+  const now = Date.now();
+  const force = req.query.refresh === '1';
+  const cached = inmotionAccountsCache.get(slug);
+  if (!force && cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return res.json({ server: slug, accounts: cached.data, cached: true, fetchedAt: cached.fetchedAt });
+  }
+  if (!process.env.BW_SESSION) {
+    return res.status(503).json({ error: 'BW_SESSION not set — Vaultwarden CLI is not unlocked.' });
+  }
+
+  let item;
+  try { item = await bwGetItemJson(`${WHM_VAULT_PREFIX}${slug}`); }
+  catch (err) { return res.status(404).json({ error: err.message }); }
+
+  const login = item.login || {};
+  const token = login.password;
+  const user = login.username || 'root';
+  const uri = login.uris?.[0]?.uri || '';
+  if (!token) return res.status(500).json({ error: `vault item "${WHM_VAULT_PREFIX}${slug}" has no password (WHM token)` });
+  if (!uri) return res.status(500).json({ error: `vault item "${WHM_VAULT_PREFIX}${slug}" has no URI (WHM host)` });
+
+  const hostPart = uri.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const host = hostPart.includes(':') ? hostPart : `${hostPart}:2087`;
+  const url = `https://${host}/json-api/listaccts?api.version=1`;
+
+  let json;
+  try {
+    const resp = await fetch(url, {
+      headers: { Authorization: `whm ${user}:${token}`, Accept: 'application/json' },
+    });
+    json = await resp.json();
+  } catch (err) {
+    return res.status(502).json({ error: `WHM listaccts failed: ${err.message}` });
+  }
+  if (json?.metadata?.result === 0) {
+    return res.status(502).json({ error: `WHM error: ${json.metadata.reason || 'unknown'}` });
+  }
+
+  const accounts = (json?.data?.acct || []).map((a) => ({
+    user: a.user,
+    domain: a.domain,
+    ip: a.ip,
+    owner: a.owner,
+    plan: a.plan,
+    suspended: a.suspended === 1 || a.suspended === '1',
+  }));
+  inmotionAccountsCache.set(slug, { data: accounts, fetchedAt: now });
+  res.json({ server: slug, accounts, cached: false, fetchedAt: now });
+});
+
+// ---------- aws ec2 picker endpoint ---------------------------------------
+
+async function resolveAwsCreds() {
+  const now = Date.now();
+  if (ec2CredsCache.data && now - ec2CredsCache.fetchedAt < CACHE_TTL_MS) return ec2CredsCache.data;
+  if (!process.env.BW_SESSION) {
+    throw new Error('BW_SESSION not set — Vaultwarden CLI is not unlocked.');
+  }
+  const item = await bwGetItemJson(AWS_VAULT_ITEM);
+  const login = item.login || {};
+  const access_key_id = login.username;
+  const secret_access_key = login.password;
+  if (!access_key_id || !secret_access_key) {
+    throw new Error(`vault item "${AWS_VAULT_ITEM}" missing username (AWS_ACCESS_KEY_ID) or password (AWS_SECRET_ACCESS_KEY)`);
+  }
+  let default_region = 'us-east-1';
+  if (item.notes && item.notes.trim()) {
+    const firstLine = item.notes.split(/\r?\n/)[0].trim();
+    if (/^[a-z]{2}-[a-z]+-\d$/.test(firstLine)) default_region = firstLine;
+  }
+  ec2CredsCache.data = { access_key_id, secret_access_key, default_region };
+  ec2CredsCache.fetchedAt = now;
+  return ec2CredsCache.data;
+}
+
+// GET /api/lab/ec2/instances?region=us-east-1
+router.get('/ec2/instances', async (req, res) => {
+  let creds;
+  try { creds = await resolveAwsCreds(); }
+  catch (err) { return res.status(503).json({ error: err.message }); }
+
+  const region = String(req.query.region || creds.default_region).trim();
+  const now = Date.now();
+  const force = req.query.refresh === '1';
+  const cached = ec2InstancesCache.get(region);
+  if (!force && cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return res.json({ region, instances: cached.data, cached: true, fetchedAt: cached.fetchedAt, defaultRegion: creds.default_region });
+  }
+
+  const env = {
+    ...process.env,
+    AWS_ACCESS_KEY_ID: creds.access_key_id,
+    AWS_SECRET_ACCESS_KEY: creds.secret_access_key,
+    AWS_DEFAULT_REGION: region,
+    AWS_REGION: region,
+    AWS_PAGER: '',
+  };
+  const result = await execProcess('aws', ['ec2', 'describe-instances', '--output', 'json'], { timeoutSeconds: 60, env });
+  if (result.code !== 0) {
+    return res.status(502).json({ error: 'aws ec2 describe-instances failed', details: result.stderr });
+  }
+  let parsed;
+  try { parsed = JSON.parse(result.stdout); }
+  catch { return res.status(502).json({ error: 'aws returned non-JSON' }); }
+
+  const instances = (parsed.Reservations || []).flatMap((r) => r.Instances || []).map((inst) => {
+    const tags = Array.isArray(inst.Tags) ? inst.Tags : [];
+    const nameTag = tags.find((t) => t.Key === 'Name');
+    return {
+      instance_id: inst.InstanceId,
+      name: nameTag ? nameTag.Value : null,
+      state: inst.State?.Name,
+      instance_type: inst.InstanceType,
+      public_ip: inst.PublicIpAddress || null,
+      private_ip: inst.PrivateIpAddress || null,
+      key_name: inst.KeyName || null,
+      availability_zone: inst.Placement?.AvailabilityZone || null,
+      tags: Object.fromEntries(tags.map((t) => [t.Key, t.Value])),
+    };
+  });
+  ec2InstancesCache.set(region, { data: instances, fetchedAt: now });
+  res.json({ region, instances, cached: false, fetchedAt: now, defaultRegion: creds.default_region });
 });
 
 export default router;

@@ -88,3 +88,50 @@ export type VmsApiResponse = {
   cached: boolean;
   fetchedAt: number;
 };
+
+export type InmotionServerSummary = {
+  slug: string;          // vault item suffix, e.g. "whm01"
+  host: string | null;   // WHM hostname extracted from the vault item's URI
+};
+
+export type InmotionAccountSummary = {
+  user: string;          // cPanel username
+  domain: string;
+  ip: string;
+  owner: string;
+  plan: string;
+  suspended: boolean;
+};
+
+export type InmotionServersResponse = {
+  servers: InmotionServerSummary[];
+  cached: boolean;
+  fetchedAt: number;
+};
+
+export type InmotionAccountsResponse = {
+  server: string;
+  accounts: InmotionAccountSummary[];
+  cached: boolean;
+  fetchedAt: number;
+};
+
+export type Ec2InstanceSummary = {
+  instance_id: string;
+  name: string | null;
+  state: string;
+  instance_type: string;
+  public_ip: string | null;
+  private_ip: string | null;
+  key_name: string | null;
+  availability_zone: string | null;
+  tags: Record<string, string>;
+};
+
+export type Ec2InstancesResponse = {
+  region: string;
+  defaultRegion: string;
+  instances: Ec2InstanceSummary[];
+  cached: boolean;
+  fetchedAt: number;
+};
