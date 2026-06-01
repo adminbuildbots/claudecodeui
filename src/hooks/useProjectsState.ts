@@ -58,7 +58,8 @@ const projectsHaveChanges = (
     return (
       serialize(nextProject.cursorSessions) !== serialize(prevProject.cursorSessions) ||
       serialize(nextProject.codexSessions) !== serialize(prevProject.codexSessions) ||
-      serialize(nextProject.geminiSessions) !== serialize(prevProject.geminiSessions)
+      serialize(nextProject.geminiSessions) !== serialize(prevProject.geminiSessions) ||
+      serialize(nextProject.deepseekSessions) !== serialize(prevProject.deepseekSessions)
     );
   });
 };
@@ -69,6 +70,7 @@ const getProjectSessions = (project: Project): ProjectSession[] => {
     ...(project.codexSessions ?? []),
     ...(project.cursorSessions ?? []),
     ...(project.geminiSessions ?? []),
+    ...(project.deepseekSessions ?? []),
   ];
 };
 
@@ -365,6 +367,21 @@ export function useProjectsState({
         }
         if (shouldUpdateSession) {
           setSelectedSession({ ...geminiSession, __provider: 'gemini' });
+        }
+        return;
+      }
+
+      const deepseekSession = project.deepseekSessions?.find((session) => session.id === sessionId);
+      if (deepseekSession) {
+        const shouldUpdateProject = selectedProject?.name !== project.name;
+        const shouldUpdateSession =
+          selectedSession?.id !== sessionId || selectedSession.__provider !== 'deepseek';
+
+        if (shouldUpdateProject) {
+          setSelectedProject(project);
+        }
+        if (shouldUpdateSession) {
+          setSelectedSession({ ...deepseekSession, __provider: 'deepseek' });
         }
         return;
       }

@@ -66,6 +66,7 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import os from 'os';
 import sessionManager from './sessionManager.js';
+import deepseekSessionStore from './deepseek-sessions.js';
 import { applyCustomSessionNames } from './database/db.js';
 
 // Import TaskMaster detection functions
@@ -494,6 +495,15 @@ async function getProjects(progressCallback = null) {
       }
       applyCustomSessionNames(project.geminiSessions, 'gemini');
 
+      // Also fetch DeepSeek sessions for this project
+      try {
+        project.deepseekSessions = deepseekSessionStore.getProjectSessions(actualProjectDir) || [];
+      } catch (e) {
+        console.warn(`Could not load DeepSeek sessions for project ${entry.name}:`, e.message);
+        project.deepseekSessions = [];
+      }
+      applyCustomSessionNames(project.deepseekSessions, 'deepseek');
+
       // Add TaskMaster detection
       try {
         const taskMasterResult = await detectTaskMasterFolder(actualProjectDir);
@@ -598,6 +608,15 @@ async function getProjects(progressCallback = null) {
         console.warn(`Could not load Gemini sessions for manual project ${projectName}:`, e.message);
       }
       applyCustomSessionNames(project.geminiSessions, 'gemini');
+
+      // Also fetch DeepSeek sessions for manual projects too
+      try {
+        project.deepseekSessions = deepseekSessionStore.getProjectSessions(actualProjectDir) || [];
+      } catch (e) {
+        console.warn(`Could not load DeepSeek sessions for manual project ${projectName}:`, e.message);
+        project.deepseekSessions = [];
+      }
+      applyCustomSessionNames(project.deepseekSessions, 'deepseek');
 
       // Add TaskMaster detection for manual projects
       try {

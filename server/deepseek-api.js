@@ -14,6 +14,7 @@
 import { createNormalizedMessage } from './providers/types.js';
 import { deepseekAdapter } from './providers/deepseek/adapter.js';
 import { notifyRunFailed, notifyRunStopped } from './services/notification-orchestrator.js';
+import deepseekSessionStore from './deepseek-sessions.js';
 
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/anthropic/v1/messages';
 const DEEPSEEK_ANTHROPIC_VERSION = '2023-06-01';
@@ -32,6 +33,8 @@ export async function queryDeepseek(command, options = {}, ws) {
     sessionId,
     sessionSummary,
     model = 'deepseek-v4-pro',
+    cwd,
+    projectPath,
   } = options;
 
   const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -63,10 +66,15 @@ export async function queryDeepseek(command, options = {}, ws) {
       provider: 'deepseek',
     }));
 
+    // Prior turns (persisted) give DeepSeek conversation context, so multi-turn
+    // chats continue like the other providers instead of being single-shot.
+    const projectDir = projectPath || cwd || '';
+    const priorTurns = deepseekSessionStore.getConversation(currentSessionId);
+
     const body = {
       model,
       max_tokens: DEEPSEEK_MAX_TOKENS,
-      messages: [{ role: 'user', content: command }],
+      messages: [...priorTurns, { role: 'user', content: command }],
       stream: true,
     };
 
@@ -99,6 +107,7 @@ export async function queryDeepseek(command, options = {}, ws) {
     let reasoningBuffer = '';
     let reasoningFlushed = false;
     let inputTokens = 0;
+    let answerText = '';
     const flushReasoning = () => {
       if (reasoningBuffer && !reasoningFlushed) {
         const thinkingMsgs = deepseekAdapter.normalizeMessage(
@@ -147,6 +156,7 @@ export async function queryDeepseek(command, options = {}, ws) {
           } else if (evt.delta.type === 'text_delta' && evt.delta.text) {
             // Answer started: emit the accumulated reasoning as one message first.
             flushReasoning();
+            answerText += evt.delta.text;
             const normalized = deepseekAdapter.normalizeMessage({
               type: 'delta',
               content: evt.delta.text,
@@ -177,6 +187,14 @@ export async function queryDeepseek(command, options = {}, ws) {
     // Send stream end + completion
     sendMessage(ws, createNormalizedMessage({ kind: 'stream_end', sessionId: currentSessionId, provider: 'deepseek' }));
     sendMessage(ws, createNormalizedMessage({ kind: 'complete', sessionId: currentSessionId, provider: 'deepseek' }));
+
+    // Persist this turn so the conversation survives refresh, shows in history,
+    // and continues with full context on the next message.
+    if (answerText) {
+      deepseekSessionStore.addMessage(currentSessionId, 'user', command, projectDir);
+      deepseekSessionStore.addMessage(currentSessionId, 'assistant', answerText, projectDir);
+    }
+
     // A notification failure (e.g. a missing notifications table) must never
     // surface to the UI or abort the response.
     try {

@@ -1,11 +1,14 @@
 /**
  * DeepSeek provider adapter.
  *
- * Normalizes DeepSeek streaming events into NormalizedMessage format.
+ * Normalizes DeepSeek streaming events into NormalizedMessage format, and
+ * reloads persisted DeepSeek conversations from the DeepSeek session store so
+ * sessions survive refresh and appear in history like the other providers.
  * @module adapters/deepseek
  */
 
 import { createNormalizedMessage, generateMessageId } from '../types.js';
+import deepseekSessionStore, { ready as storeReady } from '../../deepseek-sessions.js';
 
 const PROVIDER = 'deepseek';
 
@@ -60,11 +63,35 @@ export function normalizeMessage(raw, sessionId) {
  */
 export const deepseekAdapter = {
   normalizeMessage,
+
+  /**
+   * Reload a persisted DeepSeek conversation for display (on refresh / reopen).
+   * Returns saved user/assistant turns as normalized 'text' messages.
+   */
   async fetchHistory(sessionId, opts = {}) {
-    // DeepSeek sessions are not persisted to disk in this implementation.
+    try { await storeReady; } catch { /* store still usable from memory */ }
+
+    const raw = deepseekSessionStore.getSessionMessages(sessionId);
+    const messages = [];
+    for (const r of raw) {
+      const role = r.message?.role || r.role;
+      const content = r.message?.content ?? r.content;
+      const ts = r.timestamp || new Date().toISOString();
+      if (!role || typeof content !== 'string' || !content.trim()) continue;
+      messages.push(createNormalizedMessage({
+        id: generateMessageId('deepseek'),
+        sessionId,
+        timestamp: ts,
+        provider: PROVIDER,
+        kind: 'text',
+        role: role === 'user' ? 'user' : 'assistant',
+        content,
+      }));
+    }
+
     return {
-      messages: [],
-      total: 0,
+      messages,
+      total: messages.length,
       hasMore: false,
       offset: 0,
       limit: null,
