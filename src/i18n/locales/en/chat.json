@@ -180,13 +180,15 @@
       "anthropic": "by Anthropic",
       "openai": "by OpenAI",
       "cursorEditor": "AI Code Editor",
-      "google": "by Google"
+      "google": "by Google",
+      "deepseek": "by DeepSeek"
     },
     "readyPrompt": {
       "claude": "Ready to use Claude with {{model}}. Start typing your message below.",
       "cursor": "Ready to use Cursor with {{model}}. Start typing your message below.",
       "codex": "Ready to use Codex with {{model}}. Start typing your message below.",
       "gemini": "Ready to use Gemini with {{model}}. Start typing your message below.",
+      "deepseek": "Ready to use DeepSeek with {{model}}. Start typing your message below.",
       "default": "Select a provider above to begin"
     }
   },

@@ -40,6 +40,7 @@ interface UseChatComposerStateArgs {
   claudeModel: string;
   codexModel: string;
   geminiModel: string;
+  deepseekModel: string;
   isLoading: boolean;
   canAbortSession: boolean;
   tokenBudget: Record<string, unknown> | null;
@@ -112,6 +113,7 @@ export function useChatComposerState({
   claudeModel,
   codexModel,
   geminiModel,
+  deepseekModel,
   isLoading,
   canAbortSession,
   tokenBudget,
@@ -281,7 +283,7 @@ export function useChatComposerState({
           projectName: selectedProject.name,
           sessionId: currentSessionId,
           provider,
-          model: provider === 'cursor' ? cursorModel : provider === 'codex' ? codexModel : provider === 'gemini' ? geminiModel : claudeModel,
+          model: provider === 'cursor' ? cursorModel : provider === 'codex' ? codexModel : provider === 'gemini' ? geminiModel : provider === 'deepseek' ? deepseekModel : claudeModel,
           tokenUsage: tokenBudget,
         };
 
@@ -636,6 +638,19 @@ export function useChatComposerState({
             sessionSummary,
             permissionMode,
             toolsSettings,
+          },
+        });
+      } else if (provider === 'deepseek') {
+        sendMessage({
+          type: 'deepseek-command',
+          command: messageContent,
+          sessionId: effectiveSessionId,
+          options: {
+            cwd: resolvedProjectPath,
+            projectPath: resolvedProjectPath,
+            sessionId: effectiveSessionId,
+            model: deepseekModel,
+            sessionSummary,
           },
         });
       } else {

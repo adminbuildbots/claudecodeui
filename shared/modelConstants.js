@@ -70,6 +70,18 @@ export const CODEX_MODELS = {
 };
 
 /**
+ * DeepSeek Models
+ */
+export const DEEPSEEK_MODELS = {
+  OPTIONS: [
+    { value: "deepseek-chat", label: "DeepSeek V3" },
+    { value: "deepseek-reasoner", label: "DeepSeek R1" },
+  ],
+
+  DEFAULT: "deepseek-chat",
+};
+
+/**
  * Gemini Models
  */
 export const GEMINI_MODELS = {
