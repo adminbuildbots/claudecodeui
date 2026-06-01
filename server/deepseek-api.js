@@ -99,26 +99,14 @@ export async function queryDeepseek(command, options = {}, ws) {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    // Reasoning models (v4-pro) stream their chain-of-thought token-by-token as
-    // `thinking_delta` events. Emitting one message per token floods the UI with
-    // hundreds of separate "thinking" bubbles, so accumulate it and emit a SINGLE
-    // consolidated thinking message, flushed right before the answer begins (or at
-    // stream end for reasoning-only responses).
-    let reasoningBuffer = '';
-    let reasoningFlushed = false;
+    // Reasoning (chain-of-thought) is intentionally NOT surfaced to the UI: the
+    // model's raw internal monologue ("We need to... The user wants... I should...")
+    // reads as awkward / "off" to users. The model still reasons server-side; we
+    // only stream the polished answer. flushReasoning is kept as a no-op so the
+    // existing call sites stay valid.
     let inputTokens = 0;
     let answerText = '';
-    const flushReasoning = () => {
-      if (reasoningBuffer && !reasoningFlushed) {
-        const thinkingMsgs = deepseekAdapter.normalizeMessage(
-          { type: 'thinking', content: reasoningBuffer },
-          currentSessionId,
-        );
-        for (const m of thinkingMsgs) sendMessage(ws, m);
-        reasoningFlushed = true;
-        reasoningBuffer = '';
-      }
-    };
+    const flushReasoning = () => { /* reasoning intentionally hidden from UI */ };
 
     while (true) {
       const session = activeDeepseekSessions.get(currentSessionId);
@@ -150,9 +138,8 @@ export async function queryDeepseek(command, options = {}, ws) {
         if (evt.type === 'message_start') {
           inputTokens = evt.message?.usage?.input_tokens || 0;
         } else if (evt.type === 'content_block_delta' && evt.delta) {
-          if (evt.delta.type === 'thinking_delta' && evt.delta.thinking) {
-            // Buffer reasoning; emitted once via flushReasoning (no per-token spam).
-            reasoningBuffer += evt.delta.thinking;
+          if (evt.delta.type === 'thinking_delta') {
+            // Reasoning is hidden from the UI (see note above) — ignore it.
           } else if (evt.delta.type === 'text_delta' && evt.delta.text) {
             // Answer started: emit the accumulated reasoning as one message first.
             flushReasoning();
@@ -186,7 +173,7 @@ export async function queryDeepseek(command, options = {}, ws) {
 
     // Send stream end + completion
     sendMessage(ws, createNormalizedMessage({ kind: 'stream_end', sessionId: currentSessionId, provider: 'deepseek' }));
-    sendMessage(ws, createNormalizedMessage({ kind: 'complete', sessionId: currentSessionId, provider: 'deepseek' }));
+    sendMessage(ws, createNormalizedMessage({ kind: 'complete', exitCode: 0, isNewSession: !sessionId && !!command, sessionId: currentSessionId, provider: 'deepseek' }));
 
     // Persist this turn so the conversation survives refresh, shows in history,
     // and continues with full context on the next message.
