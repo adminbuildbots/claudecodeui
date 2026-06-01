@@ -26,7 +26,7 @@ export async function queryDeepseek(command, options = {}, ws) {
   const {
     sessionId,
     sessionSummary,
-    model = 'deepseek-chat',
+    model = 'deepseek-v4-pro',
   } = options;
 
   const apiKey = process.env.DEEPSEEK_API_KEY;

@@ -74,11 +74,11 @@ export const CODEX_MODELS = {
  */
 export const DEEPSEEK_MODELS = {
   OPTIONS: [
-    { value: "deepseek-chat", label: "DeepSeek V3" },
-    { value: "deepseek-reasoner", label: "DeepSeek R1" },
+    { value: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+    { value: "deepseek-v4-flash", label: "DeepSeek V4 Flash" },
   ],
 
-  DEFAULT: "deepseek-chat",
+  DEFAULT: "deepseek-v4-pro",
 };
 
 /**
