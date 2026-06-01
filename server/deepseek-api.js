@@ -84,6 +84,25 @@ export async function queryDeepseek(command, options = {}, ws) {
     const decoder = new TextDecoder();
     let buffer = '';
 
+    // Reasoning models (e.g. deepseek-v4-pro) stream their chain-of-thought
+    // token-by-token via `reasoning_content`. Emitting one message per token
+    // floods the UI with hundreds of separate "thinking" bubbles, so accumulate
+    // it and emit a SINGLE consolidated thinking message, flushed right before
+    // the answer begins (or at stream end for reasoning-only responses).
+    let reasoningBuffer = '';
+    let reasoningFlushed = false;
+    const flushReasoning = () => {
+      if (reasoningBuffer && !reasoningFlushed) {
+        const thinkingMsgs = deepseekAdapter.normalizeMessage(
+          { type: 'thinking', content: reasoningBuffer },
+          currentSessionId,
+        );
+        for (const m of thinkingMsgs) sendMessage(ws, m);
+        reasoningFlushed = true;
+        reasoningBuffer = '';
+      }
+    };
+
     while (true) {
       const session = activeDeepseekSessions.get(currentSessionId);
       if (!session || session.status === 'aborted') break;
@@ -105,14 +124,13 @@ export async function queryDeepseek(command, options = {}, ws) {
           const delta = json.choices?.[0]?.delta;
 
           if (delta?.reasoning_content) {
-            const normalized = deepseekAdapter.normalizeMessage({
-              type: 'thinking',
-              content: delta.reasoning_content,
-            }, currentSessionId);
-            for (const msg of normalized) sendMessage(ws, msg);
+            // Buffer reasoning; emitted once via flushReasoning (no per-token spam).
+            reasoningBuffer += delta.reasoning_content;
           }
 
           if (delta?.content) {
+            // Answer started: emit the accumulated reasoning as one message first.
+            flushReasoning();
             const normalized = deepseekAdapter.normalizeMessage({
               type: 'delta',
               content: delta.content,
@@ -136,16 +154,25 @@ export async function queryDeepseek(command, options = {}, ws) {
       }
     }
 
+    // Reasoning-only responses (no content delta) still need their thinking shown.
+    flushReasoning();
+
     // Send stream end + completion
     sendMessage(ws, createNormalizedMessage({ kind: 'stream_end', sessionId: currentSessionId, provider: 'deepseek' }));
     sendMessage(ws, createNormalizedMessage({ kind: 'complete', sessionId: currentSessionId, provider: 'deepseek' }));
-    notifyRunStopped({
-      userId: ws?.userId || null,
-      provider: 'deepseek',
-      sessionId: currentSessionId,
-      sessionName: sessionSummary,
-      stopReason: 'completed',
-    });
+    // A notification failure (e.g. a missing notifications table) must never
+    // surface to the UI or abort the response.
+    try {
+      notifyRunStopped({
+        userId: ws?.userId || null,
+        provider: 'deepseek',
+        sessionId: currentSessionId,
+        sessionName: sessionSummary,
+        stopReason: 'completed',
+      });
+    } catch (notifyErr) {
+      console.warn('[DeepSeek] notifyRunStopped failed (non-fatal):', notifyErr?.message);
+    }
 
   } catch (error) {
     const session = activeDeepseekSessions.get(currentSessionId);
@@ -159,13 +186,17 @@ export async function queryDeepseek(command, options = {}, ws) {
         sessionId: currentSessionId,
         provider: 'deepseek',
       }));
-      notifyRunFailed({
-        userId: ws?.userId || null,
-        provider: 'deepseek',
-        sessionId: currentSessionId,
-        sessionName: sessionSummary,
-        error,
-      });
+      try {
+        notifyRunFailed({
+          userId: ws?.userId || null,
+          provider: 'deepseek',
+          sessionId: currentSessionId,
+          sessionName: sessionSummary,
+          error,
+        });
+      } catch (notifyErr) {
+        console.warn('[DeepSeek] notifyRunFailed failed (non-fatal):', notifyErr?.message);
+      }
     }
   } finally {
     const session = activeDeepseekSessions.get(currentSessionId);
