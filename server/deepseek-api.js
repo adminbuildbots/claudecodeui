@@ -2,8 +2,11 @@
  * DeepSeek API Integration
  * ========================
  *
- * Provides OpenAI-compatible streaming chat with the DeepSeek API.
- * Supports DeepSeek V3 (deepseek-chat) and DeepSeek R1 (deepseek-reasoner).
+ * Streams chat from DeepSeek via its ANTHROPIC-COMPATIBLE Messages endpoint
+ * (https://api.deepseek.com/anthropic/v1/messages), so DeepSeek speaks the
+ * native Anthropic/Claude wire protocol (message + content-block streaming with
+ * thinking and text blocks). Supports DeepSeek V4 Pro (deepseek-v4-pro) and
+ * V4 Flash (deepseek-v4-flash).
  *
  * API key is read from the DEEPSEEK_API_KEY environment variable.
  */
@@ -12,12 +15,14 @@ import { createNormalizedMessage } from './providers/types.js';
 import { deepseekAdapter } from './providers/deepseek/adapter.js';
 import { notifyRunFailed, notifyRunStopped } from './services/notification-orchestrator.js';
 
-const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/anthropic/v1/messages';
+const DEEPSEEK_ANTHROPIC_VERSION = '2023-06-01';
+const DEEPSEEK_MAX_TOKENS = 8192;
 
 const activeDeepseekSessions = new Map();
 
 /**
- * Execute a DeepSeek query with streaming
+ * Execute a DeepSeek query with streaming (Anthropic Messages protocol).
  * @param {string} command - The prompt to send
  * @param {object} options - Options including cwd, sessionId, model
  * @param {object} ws - WebSocket writer
@@ -60,6 +65,7 @@ export async function queryDeepseek(command, options = {}, ws) {
 
     const body = {
       model,
+      max_tokens: DEEPSEEK_MAX_TOKENS,
       messages: [{ role: 'user', content: command }],
       stream: true,
     };
@@ -67,8 +73,9 @@ export async function queryDeepseek(command, options = {}, ws) {
     const response = await fetch(DEEPSEEK_API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': DEEPSEEK_ANTHROPIC_VERSION,
       },
       body: JSON.stringify(body),
       signal: abortController.signal,
@@ -79,18 +86,19 @@ export async function queryDeepseek(command, options = {}, ws) {
       throw new Error(`DeepSeek API error ${response.status}: ${errorBody}`);
     }
 
-    // Process SSE stream
+    // Process the Anthropic Messages SSE stream.
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
 
-    // Reasoning models (e.g. deepseek-v4-pro) stream their chain-of-thought
-    // token-by-token via `reasoning_content`. Emitting one message per token
-    // floods the UI with hundreds of separate "thinking" bubbles, so accumulate
-    // it and emit a SINGLE consolidated thinking message, flushed right before
-    // the answer begins (or at stream end for reasoning-only responses).
+    // Reasoning models (v4-pro) stream their chain-of-thought token-by-token as
+    // `thinking_delta` events. Emitting one message per token floods the UI with
+    // hundreds of separate "thinking" bubbles, so accumulate it and emit a SINGLE
+    // consolidated thinking message, flushed right before the answer begins (or at
+    // stream end for reasoning-only responses).
     let reasoningBuffer = '';
     let reasoningFlushed = false;
+    let inputTokens = 0;
     const flushReasoning = () => {
       if (reasoningBuffer && !reasoningFlushed) {
         const thinkingMsgs = deepseekAdapter.normalizeMessage(
@@ -116,45 +124,54 @@ export async function queryDeepseek(command, options = {}, ws) {
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed === 'data: [DONE]') continue;
-        if (!trimmed.startsWith('data: ')) continue;
+        // Anthropic SSE sends an `event:` line and a `data:` line per event.
+        // Each `data:` payload carries its own `type`, so parse those and skip
+        // the `event:` / blank / ping lines.
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
 
+        let evt;
         try {
-          const json = JSON.parse(trimmed.slice(6));
-          const delta = json.choices?.[0]?.delta;
+          evt = JSON.parse(payload);
+        } catch (parseErr) {
+          continue; // Skip malformed SSE lines
+        }
 
-          if (delta?.reasoning_content) {
+        if (evt.type === 'message_start') {
+          inputTokens = evt.message?.usage?.input_tokens || 0;
+        } else if (evt.type === 'content_block_delta' && evt.delta) {
+          if (evt.delta.type === 'thinking_delta' && evt.delta.thinking) {
             // Buffer reasoning; emitted once via flushReasoning (no per-token spam).
-            reasoningBuffer += delta.reasoning_content;
-          }
-
-          if (delta?.content) {
+            reasoningBuffer += evt.delta.thinking;
+          } else if (evt.delta.type === 'text_delta' && evt.delta.text) {
             // Answer started: emit the accumulated reasoning as one message first.
             flushReasoning();
             const normalized = deepseekAdapter.normalizeMessage({
               type: 'delta',
-              content: delta.content,
+              content: evt.delta.text,
             }, currentSessionId);
             for (const msg of normalized) sendMessage(ws, msg);
           }
-
-          if (json.usage) {
-            const totalTokens = (json.usage.prompt_tokens || 0) + (json.usage.completion_tokens || 0);
-            sendMessage(ws, createNormalizedMessage({
-              kind: 'status',
-              text: 'token_budget',
-              tokenBudget: { used: totalTokens, total: 128000 },
-              sessionId: currentSessionId,
-              provider: 'deepseek',
-            }));
-          }
-        } catch (parseErr) {
-          // Skip malformed SSE lines
+          // signature_delta (thinking-block signature) is not rendered — ignore.
+        } else if (evt.type === 'message_delta' && evt.usage) {
+          const totalTokens = inputTokens + (evt.usage.output_tokens || 0);
+          sendMessage(ws, createNormalizedMessage({
+            kind: 'status',
+            text: 'token_budget',
+            tokenBudget: { used: totalTokens, total: 128000 },
+            sessionId: currentSessionId,
+            provider: 'deepseek',
+          }));
+        } else if (evt.type === 'error') {
+          throw new Error(evt.error?.message || 'DeepSeek streaming error');
         }
+        // message_start handled above; content_block_start/stop, message_stop,
+        // and ping require no action.
       }
     }
 
-    // Reasoning-only responses (no content delta) still need their thinking shown.
+    // Reasoning-only responses (no text block) still need their thinking shown.
     flushReasoning();
 
     // Send stream end + completion
