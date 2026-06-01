@@ -16,6 +16,7 @@ FROM node:22-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
       python3 \
+      python3-dev \
       python3-setuptools \
       python3-pip \
       python3-venv \
@@ -64,7 +65,7 @@ RUN pip3 install --break-system-packages --no-cache-dir 'graphifyy[mcp]'
 
 # Claude Code CLI itself. cloudcli's "Connect Claude" terminal shells out
 # to `claude`, so it has to be on PATH inside the container.
-RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @anthropic-ai/claude-code@2.1.158
 
 # ruflo (multi-agent orchestration via @claude-flow/cli, exposed as MCP).
 # Bake into the image so the binary is on PATH the moment the container
