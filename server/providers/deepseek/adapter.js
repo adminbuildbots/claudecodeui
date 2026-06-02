@@ -8,7 +8,7 @@
  */
 
 import { createNormalizedMessage, generateMessageId } from '../types.js';
-import deepseekSessionStore, { ready as storeReady } from '../../deepseek-sessions.js';
+import { claudeAdapter } from '../claude/adapter.js';
 
 const PROVIDER = 'deepseek';
 
@@ -65,36 +65,13 @@ export const deepseekAdapter = {
   normalizeMessage,
 
   /**
-   * Reload a persisted DeepSeek conversation for display (on refresh / reopen).
-   * Returns saved user/assistant turns as normalized 'text' messages.
+   * Reload a DeepSeek conversation for display (on refresh / reopen).
+   *
+   * DeepSeek now runs through the Claude Code agent SDK, so its sessions are
+   * stored as Claude CLI sessions on disk. Delegate to the Claude adapter to
+   * read them back.
    */
   async fetchHistory(sessionId, opts = {}) {
-    try { await storeReady; } catch { /* store still usable from memory */ }
-
-    const raw = deepseekSessionStore.getSessionMessages(sessionId);
-    const messages = [];
-    for (const r of raw) {
-      const role = r.message?.role || r.role;
-      const content = r.message?.content ?? r.content;
-      const ts = r.timestamp || new Date().toISOString();
-      if (!role || typeof content !== 'string' || !content.trim()) continue;
-      messages.push(createNormalizedMessage({
-        id: generateMessageId('deepseek'),
-        sessionId,
-        timestamp: ts,
-        provider: PROVIDER,
-        kind: 'text',
-        role: role === 'user' ? 'user' : 'assistant',
-        content,
-      }));
-    }
-
-    return {
-      messages,
-      total: messages.length,
-      hasMore: false,
-      offset: 0,
-      limit: null,
-    };
+    return claudeAdapter.fetchHistory(sessionId, opts);
   },
 };

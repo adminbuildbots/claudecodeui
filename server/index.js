@@ -1563,7 +1563,24 @@ function handleChatConnection(ws, request) {
                 console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
                 console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
                 console.log('🤖 Model:', data.options?.model || 'default');
-                await queryDeepseek(data.command, data.options, writer);
+                // DeepSeek runs through the SAME Claude Code agent harness (tools,
+                // MCP, plugins, skills, native sessions) by pointing the SDK at
+                // DeepSeek's Anthropic-compatible endpoint via per-call env.
+                const dsKey = process.env.DEEPSEEK_API_KEY || '';
+                const dsModel = data.options?.model || 'deepseek-v4-pro';
+                const dsOptions = {
+                    ...data.options,
+                    provider: 'deepseek',
+                    model: dsModel,
+                    env: {
+                        ...process.env,
+                        ANTHROPIC_BASE_URL: 'https://api.deepseek.com/anthropic',
+                        ANTHROPIC_AUTH_TOKEN: dsKey,
+                        ANTHROPIC_API_KEY: dsKey,
+                        ANTHROPIC_MODEL: dsModel,
+                    },
+                };
+                await queryClaudeSDK(data.command, dsOptions, writer);
             } else if (data.type === 'cursor-resume') {
                 // Backward compatibility: treat as cursor-command with resume and no prompt
                 console.log('[DEBUG] Cursor resume session (compat):', data.sessionId);
@@ -1584,7 +1601,8 @@ function handleChatConnection(ws, request) {
                 } else if (provider === 'gemini') {
                     success = abortGeminiSession(data.sessionId);
                 } else if (provider === 'deepseek') {
-                    success = abortDeepseekSession(data.sessionId);
+                    // DeepSeek runs through the Claude Agent SDK now.
+                    success = await abortClaudeSDKSession(data.sessionId);
                 } else {
                     // Use Claude Agents SDK
                     success = await abortClaudeSDKSession(data.sessionId);
