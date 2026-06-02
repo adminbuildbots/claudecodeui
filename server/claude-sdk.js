@@ -574,6 +574,7 @@ async function queryClaudeSDK(command, options = {}, ws) {
   // DeepSeek's Anthropic-compatible endpoint.
   const provider = options.provider || 'claude';
   let capturedSessionId = sessionId;
+  let cliStderr = '';
   let sessionCreatedSent = false;
   let tempImagePaths = [];
   let tempDir = null;
@@ -589,6 +590,13 @@ async function queryClaudeSDK(command, options = {}, ws) {
   try {
     // Map CLI options to SDK format
     const sdkOptions = await mapCliOptionsToSDK(options);
+
+    // Capture the underlying CLI's stderr so failures (which otherwise surface
+    // only as "process exited with code 1") are diagnosable in the server logs.
+    sdkOptions.stderr = (d) => {
+      cliStderr += String(d);
+      if (cliStderr.length > 20000) cliStderr = cliStderr.slice(-20000);
+    };
 
     // Load MCP configuration
     const mcpServers = await loadMcpConfig(options.cwd);
@@ -802,6 +810,9 @@ async function queryClaudeSDK(command, options = {}, ws) {
 
   } catch (error) {
     console.error('SDK query error:', error);
+    if (cliStderr) {
+      console.error(`[claude-sdk] CLI stderr tail (provider=${provider}):\n` + cliStderr.slice(-3000));
+    }
 
     // Clean up session on error
     if (capturedSessionId) {
