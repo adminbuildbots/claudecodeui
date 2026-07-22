@@ -2059,7 +2059,20 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
         const fs = (await import('fs')).promises;
         const os = (await import('os')).default;
 
-        // Configure multer for image uploads
+        // Image MIME types that should be base64-encoded for inline display
+        const imageMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+        // Document MIME types that should be saved to the project directory
+        const documentMimes = [
+            'application/pdf',
+            'text/markdown', 'text/plain',
+            'application/json', 'text/csv',
+            'text/yaml', 'application/x-yaml',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ];
+        const allowedMimes = [...imageMimes, ...documentMimes];
+
+        // Configure multer for file uploads
         const storage = multer.diskStorage({
             destination: async (req, file, cb) => {
                 const uploadDir = path.join(os.tmpdir(), 'claude-ui-uploads', String(req.user.id));
@@ -2074,11 +2087,11 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
         });
 
         const fileFilter = (req, file, cb) => {
-            const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
             if (allowedMimes.includes(file.mimetype)) {
                 cb(null, true);
             } else {
-                cb(new Error('Invalid file type. Only JPEG, PNG, GIF, WebP, and SVG are allowed.'));
+                const exts = allowedMimes.map(m => m.split('/')[1]).join(', ');
+                cb(new Error(`Invalid file type. Allowed: images (${imageMimes.map(m => m.split('/')[1]).join(', ')}) and documents (${documentMimes.map(m => m.split('/')[1]).join(', ')})`));
             }
         };
 
@@ -2086,52 +2099,92 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
             storage,
             fileFilter,
             limits: {
-                fileSize: 5 * 1024 * 1024, // 5MB
+                fileSize: 50 * 1024 * 1024, // 50MB limit (up from 5MB to support PDFs/docs)
                 files: 5
             }
         });
 
-        // Handle multipart form data
-        upload.array('images', 5)(req, res, async (err) => {
+        // Accept field name 'images' (legacy) or 'files' (new)
+        upload.any()(req, res, async (err) => {
             if (err) {
                 return res.status(400).json({ error: err.message });
             }
 
             if (!req.files || req.files.length === 0) {
-                return res.status(400).json({ error: 'No image files provided' });
+                return res.status(400).json({ error: 'No files provided' });
             }
 
             try {
-                // Process uploaded images
-                const processedImages = await Promise.all(
+                // Resolve project root for saving document files
+                const { projectName } = req.params;
+                let projectRoot = null;
+                try {
+                    projectRoot = await extractProjectDirectory(projectName);
+                } catch (_) {
+                    // projectRoot stays null — docs go to tmp fallback
+                }
+
+                const processedFiles = await Promise.all(
                     req.files.map(async (file) => {
-                        // Read file and convert to base64
-                        const buffer = await fs.readFile(file.path);
-                        const base64 = buffer.toString('base64');
-                        const mimeType = file.mimetype;
+                        const isImage = imageMimes.includes(file.mimetype);
 
-                        // Clean up temp file immediately
-                        await fs.unlink(file.path);
-
-                        return {
-                            name: file.originalname,
-                            data: `data:${mimeType};base64,${base64}`,
-                            size: file.size,
-                            mimeType: mimeType
-                        };
+                        if (isImage) {
+                            // Images: base64-encode for inline display in chat
+                            const buffer = await fs.readFile(file.path);
+                            const base64 = buffer.toString('base64');
+                            await fs.unlink(file.path);
+                            return {
+                                name: file.originalname,
+                                data: `data:${file.mimetype};base64,${base64}`,
+                                size: file.size,
+                                mimeType: file.mimetype,
+                                type: 'image',
+                            };
+                        } else {
+                            // Documents: save to project directory
+                            const destDir = projectRoot || path.join(os.tmpdir(), 'claude-ui-uploads', String(req.user.id));
+                            const destPath = path.join(destDir, file.originalname);
+                            // Avoid overwriting — append suffix if needed
+                            let finalPath = destPath;
+                            let counter = 1;
+                            while (true) {
+                                try {
+                                    await fs.access(finalPath);
+                                    const ext = path.extname(destPath);
+                                    const base = destPath.slice(0, -ext.length);
+                                    finalPath = `${base}-${counter}${ext}`;
+                                    counter++;
+                                } catch (_) {
+                                    break; // File doesn't exist, safe to use
+                                }
+                            }
+                            // For non-project directories, just ensure the dest dir exists
+                            await fs.mkdir(path.dirname(finalPath), { recursive: true });
+                            await fs.rename(file.path, finalPath);
+                            return {
+                                name: path.basename(finalPath),
+                                path: finalPath,
+                                relativePath: projectRoot ? path.relative(projectRoot, finalPath) : finalPath,
+                                size: file.size,
+                                mimeType: file.mimetype,
+                                type: 'document',
+                            };
+                        }
                     })
                 );
 
-                res.json({ images: processedImages });
+                res.json({ files: processedFiles });
             } catch (error) {
-                console.error('Error processing images:', error);
-                // Clean up any remaining files
-                await Promise.all(req.files.map(f => fs.unlink(f.path).catch(() => { })));
-                res.status(500).json({ error: 'Failed to process images' });
+                console.error('Error processing uploaded files:', error);
+                // Clean up any remaining temp files
+                if (req.files) {
+                    await Promise.all(req.files.map(f => fs.unlink(f.path).catch(() => { })));
+                }
+                res.status(500).json({ error: 'Failed to process files' });
             }
         });
     } catch (error) {
-        console.error('Error in image upload endpoint:', error);
+        console.error('Error in file upload endpoint:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -2322,6 +2375,17 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
         console.error('Error reading session token usage:', error);
         res.status(500).json({ error: 'Failed to read session token usage' });
     }
+});
+
+// Global JSON error handler — must be registered with 4 args so Express
+// recognises it as an error-handling middleware. Without this, unhandled
+// async route errors fall through to Express default HTML 500 page, which
+// causes client-side JSON.parse to throw Unexpected token < DOCTYPE.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+    console.error('[express error handler]', err);
+    if (res.headersSent) return;
+    res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
 // Serve React app for all other routes (excluding static files)

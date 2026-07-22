@@ -1,7 +1,13 @@
 // Service Worker for CloudCLI PWA
 // Cache only manifest (needed for PWA install). HTML and JS are never pre-cached
 // so a rebuild + refresh always picks up the latest assets.
-const CACHE_NAME = 'claude-ui-v2';
+// IMPORTANT: bump this version on EVERY deploy whose built assets change. The
+// activate handler below purges any cache whose name != CACHE_NAME, forcing all
+// clients to drop stale /assets/ entries on their next visit. Without a bump, a
+// deploy that swaps bundles can leave old clients 404ing the previous bundle.
+// (2026-06-02: bumped v2 -> v3 after the dev->prod cutover swapped bundles.)
+// TODO: automate via a postbuild step that injects the build hash here.
+const CACHE_NAME = 'claude-ui-v3';
 const urlsToCache = [
   '/manifest.json'
 ];

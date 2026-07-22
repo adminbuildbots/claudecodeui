@@ -10,6 +10,13 @@ import type {
 } from '../types';
 
 const parseJson = async <T>(response: Response): Promise<T> => {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    const text = await response.text();
+    throw new Error(
+      `Server returned non-JSON response (HTTP ${response.status}): ${text.slice(0, 200)}`,
+    );
+  }
   const data = (await response.json()) as T;
   return data;
 };
