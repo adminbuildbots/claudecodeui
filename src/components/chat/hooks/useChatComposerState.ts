@@ -41,6 +41,7 @@ interface UseChatComposerStateArgs {
   codexModel: string;
   geminiModel: string;
   deepseekModel: string;
+  orchestrationStrategy: string;
   isLoading: boolean;
   canAbortSession: boolean;
   tokenBudget: Record<string, unknown> | null;
@@ -114,6 +115,7 @@ export function useChatComposerState({
   codexModel,
   geminiModel,
   deepseekModel,
+  orchestrationStrategy,
   isLoading,
   canAbortSession,
   tokenBudget,
@@ -283,7 +285,7 @@ export function useChatComposerState({
           projectName: selectedProject.name,
           sessionId: currentSessionId,
           provider,
-          model: provider === 'cursor' ? cursorModel : provider === 'codex' ? codexModel : provider === 'gemini' ? geminiModel : provider === 'deepseek' ? deepseekModel : claudeModel,
+          model: provider === 'cursor' ? cursorModel : provider === 'codex' ? codexModel : provider === 'gemini' ? geminiModel : provider === 'deepseek' ? deepseekModel : provider === 'orchestration' ? orchestrationStrategy : claudeModel,
           tokenUsage: tokenBudget,
         };
 
@@ -335,6 +337,8 @@ export function useChatComposerState({
       currentSessionId,
       cursorModel,
       geminiModel,
+      deepseekModel,
+      orchestrationStrategy,
       handleBuiltInCommand,
       handleCustomCommand,
       input,
@@ -573,7 +577,9 @@ export function useChatComposerState({
                 ? 'codex-settings'
                 : provider === 'gemini'
                   ? 'gemini-settings'
-                  : 'claude-settings';
+                  : provider === 'orchestration'
+                    ? 'orchestration-settings'
+                    : 'claude-settings';
           const savedSettings = safeLocalStorage.getItem(settingsKey);
           if (savedSettings) {
             return JSON.parse(savedSettings);
@@ -653,6 +659,26 @@ export function useChatComposerState({
             sessionSummary,
           },
         });
+      } else if (provider === 'orchestration') {
+        // "Agent SDK" runs through the Claude Code harness (see
+        // orchestration-runner.js), so it takes the same options as claude.
+        // `model` carries the STRATEGY id (fan-out / pipeline / debate).
+        sendMessage({
+          type: 'orchestration-command',
+          command: messageContent,
+          sessionId: effectiveSessionId,
+          options: {
+            projectPath: resolvedProjectPath,
+            cwd: resolvedProjectPath,
+            sessionId: effectiveSessionId,
+            resume: Boolean(effectiveSessionId),
+            toolsSettings,
+            permissionMode,
+            model: orchestrationStrategy,
+            sessionSummary,
+            images: uploadedImages,
+          },
+        });
       } else {
         sendMessage({
           type: 'claude-command',
@@ -693,6 +719,8 @@ export function useChatComposerState({
       codexModel,
       currentSessionId,
       cursorModel,
+      deepseekModel,
+      orchestrationStrategy,
       executeCommand,
       geminiModel,
       isLoading,

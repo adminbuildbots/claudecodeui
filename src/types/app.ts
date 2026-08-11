@@ -1,4 +1,4 @@
-export type SessionProvider = 'claude' | 'cursor' | 'codex' | 'gemini' | 'deepseek';
+export type SessionProvider = 'claude' | 'cursor' | 'codex' | 'gemini' | 'deepseek' | 'orchestration';
 
 export type AppTab = 'chat' | 'files' | 'shell' | 'git' | 'tasks' | 'prd' | 'preview' | `plugin:${string}`;
 
@@ -40,6 +40,7 @@ export interface Project {
   codexSessions?: ProjectSession[];
   geminiSessions?: ProjectSession[];
   deepseekSessions?: ProjectSession[];
+  orchestrationSessions?: ProjectSession[];
   sessionMeta?: ProjectSessionMeta;
   taskmaster?: ProjectTaskmasterInfo;
   [key: string]: unknown;

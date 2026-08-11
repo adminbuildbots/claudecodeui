@@ -50,6 +50,7 @@ import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursor
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
 import { spawnGemini, abortGeminiSession, isGeminiSessionActive, getActiveGeminiSessions } from './gemini-cli.js';
 import { queryDeepseek, abortDeepseekSession, isDeepseekSessionActive, getActiveDeepseekSessions } from './deepseek-api.js';
+import { queryOrchestration } from './orchestration-runner.js';
 import sessionManager from './sessionManager.js';
 import gitRoutes from './routes/git.js';
 import authRoutes from './routes/auth.js';
@@ -80,7 +81,7 @@ import * as presence from './presence.js';
 import { IS_PLATFORM } from './constants/config.js';
 import { getConnectableHost } from '../shared/networkHosts.js';
 
-const VALID_PROVIDERS = ['claude', 'codex', 'cursor', 'gemini', 'deepseek'];
+const VALID_PROVIDERS = ['claude', 'codex', 'cursor', 'gemini', 'deepseek', 'orchestration'];
 
 // File system watchers for provider project/session folders
 const PROVIDER_WATCH_PATHS = [
@@ -1521,6 +1522,7 @@ function handleChatConnection(ws, request) {
                 'cursor-command': 'cursor',
                 'codex-command': 'codex',
                 'gemini-command': 'gemini',
+                'orchestration-command': 'orchestration',
             };
             const providerForType = providerCommandTypes[data.type];
             if (providerForType) {
@@ -1581,6 +1583,17 @@ function handleChatConnection(ws, request) {
                     },
                 };
                 await queryClaudeSDK(data.command, dsOptions, writer);
+            } else if (data.type === 'orchestration-command') {
+                console.log('[DEBUG] Orchestration message:', data.command || '[Continue/Resume]');
+                console.log('📁 Project:', data.options?.projectPath || data.options?.cwd || 'Unknown');
+                console.log('🔄 Session:', data.options?.sessionId ? 'Resume' : 'New');
+                console.log('🎼 Strategy:', data.options?.model || 'fan-out');
+                // "Agent SDK" provider: a multi-agent turn on the same Claude Code
+                // harness. options.model carries the STRATEGY id; the runner resolves
+                // it into an orchestrator model + subagent roster (see
+                // orchestration-runner.js). Sessions are Claude SDK sessions, so
+                // abort/status/active-session handling falls through to the Claude paths.
+                await queryOrchestration(data.command, data.options, writer);
             } else if (data.type === 'cursor-resume') {
                 // Backward compatibility: treat as cursor-command with resume and no prompt
                 console.log('[DEBUG] Cursor resume session (compat):', data.sessionId);

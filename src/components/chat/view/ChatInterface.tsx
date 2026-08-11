@@ -73,6 +73,8 @@ function ChatInterface({
     setGeminiModel,
     deepseekModel,
     setDeepseekModel,
+    orchestrationStrategy,
+    setOrchestrationStrategy,
     permissionMode,
     pendingPermissionRequests,
     setPendingPermissionRequests,
@@ -183,6 +185,7 @@ function ChatInterface({
     codexModel,
     geminiModel,
     deepseekModel,
+    orchestrationStrategy,
     isLoading,
     canAbortSession,
     tokenBudget,
@@ -324,7 +327,9 @@ function ChatInterface({
           ? t('messageTypes.codex')
           : provider === 'gemini'
             ? t('messageTypes.gemini')
-            : t('messageTypes.claude');
+            : provider === 'orchestration'
+              ? t('messageTypes.orchestration')
+              : t('messageTypes.claude');
 
     return (
       <div className="flex h-full items-center justify-center">
@@ -364,6 +369,8 @@ function ChatInterface({
           setGeminiModel={setGeminiModel}
           deepseekModel={deepseekModel}
           setDeepseekModel={setDeepseekModel}
+          orchestrationStrategy={orchestrationStrategy}
+          setOrchestrationStrategy={setOrchestrationStrategy}
           tasksEnabled={tasksEnabled}
           isTaskMasterInstalled={isTaskMasterInstalled}
           onShowAllTasks={onShowAllTasks}

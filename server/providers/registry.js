@@ -12,6 +12,7 @@ import { cursorAdapter } from './cursor/adapter.js';
 import { codexAdapter } from './codex/adapter.js';
 import { geminiAdapter } from './gemini/adapter.js';
 import { deepseekAdapter } from './deepseek/adapter.js';
+import { orchestrationAdapter } from './orchestration/adapter.js';
 
 /**
  * @typedef {import('./types.js').ProviderAdapter} ProviderAdapter
@@ -27,6 +28,7 @@ providers.set('cursor', cursorAdapter);
 providers.set('codex', codexAdapter);
 providers.set('gemini', geminiAdapter);
 providers.set('deepseek', deepseekAdapter);
+providers.set('orchestration', orchestrationAdapter);
 
 /**
  * Get a provider adapter by name.

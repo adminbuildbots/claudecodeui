@@ -8,6 +8,7 @@ import {
   CODEX_MODELS,
   GEMINI_MODELS,
   DEEPSEEK_MODELS,
+  ORCHESTRATION_MODELS,
 } from "../../../../../shared/modelConstants";
 import type { ProjectSession, SessionProvider } from "../../../../types/app";
 import { NextTaskBanner } from "../../../task-master";
@@ -28,6 +29,8 @@ type ProviderSelectionEmptyStateProps = {
   setGeminiModel: (model: string) => void;
   deepseekModel: string;
   setDeepseekModel: (model: string) => void;
+  orchestrationStrategy: string;
+  setOrchestrationStrategy: (model: string) => void;
   tasksEnabled: boolean;
   isTaskMasterInstalled: boolean | null;
   onShowAllTasks?: (() => void) | null;
@@ -84,6 +87,14 @@ const PROVIDERS: ProviderDef[] = [
     ring: "ring-indigo-500/15",
     check: "bg-indigo-500 text-white",
   },
+  {
+    id: "orchestration",
+    name: "Agent SDK",
+    infoKey: "providerSelection.providerInfo.orchestration",
+    accent: "border-amber-500 dark:border-amber-400",
+    ring: "ring-amber-500/15",
+    check: "bg-amber-500 text-white",
+  },
 ];
 
 function getModelConfig(p: SessionProvider) {
@@ -91,6 +102,7 @@ function getModelConfig(p: SessionProvider) {
   if (p === "codex") return CODEX_MODELS;
   if (p === "gemini") return GEMINI_MODELS;
   if (p === "deepseek") return DEEPSEEK_MODELS;
+  if (p === "orchestration") return ORCHESTRATION_MODELS;
   return CURSOR_MODELS;
 }
 
@@ -101,11 +113,13 @@ function getModelValue(
   co: string,
   g: string,
   d: string,
+  o: string,
 ) {
   if (p === "claude") return c;
   if (p === "codex") return co;
   if (p === "gemini") return g;
   if (p === "deepseek") return d;
+  if (p === "orchestration") return o;
   return cu;
 }
 
@@ -125,6 +139,8 @@ export default function ProviderSelectionEmptyState({
   setGeminiModel,
   deepseekModel,
   setDeepseekModel,
+  orchestrationStrategy,
+  setOrchestrationStrategy,
   tasksEnabled,
   isTaskMasterInstalled,
   onShowAllTasks,
@@ -154,6 +170,9 @@ export default function ProviderSelectionEmptyState({
     } else if (provider === "deepseek") {
       setDeepseekModel(value);
       localStorage.setItem("deepseek-model", value);
+    } else if (provider === "orchestration") {
+      setOrchestrationStrategy(value);
+      localStorage.setItem("orchestration-strategy", value);
     } else {
       setCursorModel(value);
       localStorage.setItem("cursor-model", value);
@@ -168,6 +187,7 @@ export default function ProviderSelectionEmptyState({
     codexModel,
     geminiModel,
     deepseekModel,
+    orchestrationStrategy,
   );
 
   /* ── New session — provider picker ── */
@@ -186,7 +206,7 @@ export default function ProviderSelectionEmptyState({
           </div>
 
           {/* Provider cards — horizontal row, equal width */}
-          <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-2.5">
+          <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-6 sm:gap-2.5">
             {PROVIDERS.map((p) => {
               const active = provider === p.id;
               return (
@@ -273,6 +293,9 @@ export default function ProviderSelectionEmptyState({
                   }),
                   deepseek: t("providerSelection.readyPrompt.deepseek", {
                     model: deepseekModel,
+                  }),
+                  orchestration: t("providerSelection.readyPrompt.orchestration", {
+                    model: orchestrationStrategy,
                   }),
                 }[provider]
               }

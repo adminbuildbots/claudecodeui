@@ -281,6 +281,14 @@ async function mapCliOptionsToSDK(options = {}) {
   sdkOptions.model = options.model || CLAUDE_MODELS.DEFAULT;
   // Model logged at query start below
 
+  // Programmatic subagent definitions. The orchestration provider ("Agent SDK")
+  // registers a per-strategy role roster here (each an AgentDefinition with its
+  // own model/prompt); the main query delegates to them via the built-in Task
+  // tool. Claude/DeepSeek pass nothing, so their behaviour is unchanged.
+  if (options.agents && typeof options.agents === 'object') {
+    sdkOptions.agents = options.agents;
+  }
+
   // Map system prompt configuration
   sdkOptions.systemPrompt = {
     type: 'preset',
@@ -292,8 +300,13 @@ async function mapCliOptionsToSDK(options = {}) {
   // call MCP tools or grep .git/config at session start. Empty string when
   // none of those sources exist (keeps non-lab projects clean).
   const labBriefing = await buildLabContextBriefing(cwd);
-  if (labBriefing) {
-    sdkOptions.systemPrompt.append = labBriefing;
+  // Optional caller-supplied system-prompt append (used by the orchestration
+  // provider to layer strategy instructions on top of the lab briefing). Claude
+  // and DeepSeek pass nothing here, so their behaviour is unchanged.
+  const extraAppend = typeof options.appendSystemPrompt === 'string' ? options.appendSystemPrompt.trim() : '';
+  const appendParts = [labBriefing, extraAppend].filter(Boolean);
+  if (appendParts.length > 0) {
+    sdkOptions.systemPrompt.append = appendParts.join('\n\n');
   }
 
   // Map setting sources for CLAUDE.md loading

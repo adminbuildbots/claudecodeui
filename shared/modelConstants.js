@@ -82,6 +82,24 @@ export const DEEPSEEK_MODELS = {
 };
 
 /**
+ * Orchestration ("Agent SDK") strategies.
+ *
+ * This provider's "model" dropdown holds multi-agent STRATEGIES rather than
+ * models. The chosen value is sent as options.model on the orchestration-command
+ * and resolved server-side (server/providers/orchestration/strategies.js) into an
+ * orchestrator model + subagent roster.
+ */
+export const ORCHESTRATION_MODELS = {
+  OPTIONS: [
+    { value: "fan-out", label: "Fan-out" },
+    { value: "pipeline", label: "Pipeline" },
+    { value: "debate", label: "Debate" },
+  ],
+
+  DEFAULT: "fan-out",
+};
+
+/**
  * Gemini Models
  */
 export const GEMINI_MODELS = {

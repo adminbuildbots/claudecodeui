@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authenticatedFetch } from '../../../utils/api';
-import { CLAUDE_MODELS, CODEX_MODELS, CURSOR_MODELS, GEMINI_MODELS, DEEPSEEK_MODELS } from '../../../../shared/modelConstants';
+import { CLAUDE_MODELS, CODEX_MODELS, CURSOR_MODELS, GEMINI_MODELS, DEEPSEEK_MODELS, ORCHESTRATION_MODELS } from '../../../../shared/modelConstants';
 import type { PendingPermissionRequest, PermissionMode } from '../types/types';
 import type { ProjectSession, SessionProvider } from '../../../types/app';
 
@@ -28,6 +28,10 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
   });
   const [deepseekModel, setDeepseekModel] = useState<string>(() => {
     return localStorage.getItem('deepseek-model') || DEEPSEEK_MODELS.DEFAULT;
+  });
+  // Orchestration ("Agent SDK") uses a STRATEGY in place of a model.
+  const [orchestrationStrategy, setOrchestrationStrategy] = useState<string>(() => {
+    return localStorage.getItem('orchestration-strategy') || ORCHESTRATION_MODELS.DEFAULT;
   });
 
   const lastProviderRef = useRef(provider);
@@ -115,6 +119,8 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
     setGeminiModel,
     deepseekModel,
     setDeepseekModel,
+    orchestrationStrategy,
+    setOrchestrationStrategy,
     permissionMode,
     setPermissionMode,
     pendingPermissionRequests,

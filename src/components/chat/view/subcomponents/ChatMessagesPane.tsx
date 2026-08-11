@@ -28,6 +28,8 @@ interface ChatMessagesPaneProps {
   setGeminiModel: (model: string) => void;
   deepseekModel: string;
   setDeepseekModel: (model: string) => void;
+  orchestrationStrategy: string;
+  setOrchestrationStrategy: (model: string) => void;
   tasksEnabled: boolean;
   isTaskMasterInstalled: boolean | null;
   onShowAllTasks?: (() => void) | null;
@@ -75,6 +77,8 @@ export default function ChatMessagesPane({
   setGeminiModel,
   deepseekModel,
   setDeepseekModel,
+  orchestrationStrategy,
+  setOrchestrationStrategy,
   tasksEnabled,
   isTaskMasterInstalled,
   onShowAllTasks,
@@ -160,6 +164,8 @@ export default function ChatMessagesPane({
           setGeminiModel={setGeminiModel}
           deepseekModel={deepseekModel}
           setDeepseekModel={setDeepseekModel}
+          orchestrationStrategy={orchestrationStrategy}
+          setOrchestrationStrategy={setOrchestrationStrategy}
           tasksEnabled={tasksEnabled}
           isTaskMasterInstalled={isTaskMasterInstalled}
           onShowAllTasks={onShowAllTasks}
